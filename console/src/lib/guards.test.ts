@@ -164,6 +164,7 @@ describe("a Nyuchi product that talks to Nyuchi only", () => {
     "public/theme-init.js",
     "integrations/mock-auth.mjs",
     "integrations/security-headers.mjs",
+    "integrations/workos-auth.mjs",
   ].map((f) => join(root, f));
   const scanned = [
     ...mine.filter((f) => /\.(ts|astro|css)$/.test(f)),
@@ -224,5 +225,52 @@ describe("a Nyuchi product that talks to Nyuchi only", () => {
     expect(text(join(srcDir, "pages/auth/signout.ts"))).not.toMatch(
       /export const GET/,
     );
+  });
+});
+
+describe("WorkOS credentials", () => {
+  const wrangler = text(join(root, "wrangler.jsonc"));
+
+  it("takes the API key from the Secrets Store binding, with a marked placeholder store id", () => {
+    expect(wrangler).toMatch(/"secrets_store_secrets"/);
+    expect(wrangler).toMatch(/"binding":\s*"CONSOLE_WORKOS_API_KEY"/);
+    expect(wrangler).toMatch(/"secret_name":\s*"CONSOLE_WORKOS_API_KEY"/);
+    expect(wrangler).toMatch(/"store_id":\s*"REPLACE_WITH_SECRETS_STORE_ID"/);
+    expect(wrangler).toContain("OWNER ACTION");
+  });
+
+  it("keeps the client id public and the cookie password out of the repo", () => {
+    expect(wrangler).toContain('"WORKOS_CLIENT_ID": "client_01KQBBSMQTSMTBN7HEC9KQBJC0"');
+    expect(wrangler).toContain('"WORKOS_REDIRECT_URI": "https://weatherstations.nyuchi.com/callback"');
+    const code = wrangler.replace(/\/\/.*$/gm, "");
+    expect(code).not.toMatch(/WORKOS_COOKIE_PASSWORD|(?<!CONSOLE_)WORKOS_API_KEY"/);
+  });
+
+  it("commits no secret value anywhere", () => {
+    for (const f of [
+      ...mine.filter((x) => /\.(ts|astro|css)$/.test(x)),
+      join(root, "README.md"),
+      join(root, "wrangler.jsonc"),
+    ]) {
+      expect(text(f), rel(f)).not.toMatch(/\bsk_(live|test)_[A-Za-z0-9]{8,}/);
+    }
+  });
+
+  it("configures AuthKit at runtime from the Worker env, not from astro:env", () => {
+    const mw = text(join(srcDir, "auth/workos-middleware.ts"));
+    expect(mw).toContain('from "cloudflare:workers"');
+    expect(mw).toContain("resolveWorkosConfig");
+    expect(mw).not.toContain("astro:env");
+    expect(text(join(srcDir, "auth/workos-config.ts"))).toContain(".get()");
+    expect(text(join(root, "astro.config.mjs"))).not.toContain('from "@workos/authkit-astro"');
+  });
+
+  it("answers JSON 500 and fails closed on bad config, and never logs", () => {
+    const mw = text(join(srcDir, "auth/workos-middleware.ts"));
+    expect(mw).toContain("status: 500");
+    expect(mw).toContain("application/json");
+    expect(mw).toMatch(/auth:\s*unknown|user: null/);
+    for (const f of ["workos-middleware.ts", "workos-config.ts"])
+      expect(text(join(srcDir, "auth", f)), f).not.toMatch(/console\.|JSON\.stringify\(\s*env/);
   });
 });

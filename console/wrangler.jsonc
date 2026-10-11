@@ -11,7 +11,20 @@
   "workers_dev": false,
   "preview_urls": false,
   "observability": { "enabled": true },
+  // OWNER ACTION: replace store_id with the Cloudflare Secrets Store id that
+  // holds the secret CONSOLE_WORKOS_API_KEY (the WorkOS API key for the Nyuchi
+  // Console app). The placeholder is not a real id; a deploy with it fails.
+  // WORKOS_COOKIE_PASSWORD is a separate Worker secret: `wrangler secret put`.
+  "secrets_store_secrets": [
+    {
+      "binding": "CONSOLE_WORKOS_API_KEY",
+      "store_id": "REPLACE_WITH_SECRETS_STORE_ID",
+      "secret_name": "CONSOLE_WORKOS_API_KEY"
+    }
+  ],
   "vars": {
+    "WORKOS_CLIENT_ID": "client_01KQBBSMQTSMTBN7HEC9KQBJC0",
+    "WORKOS_REDIRECT_URI": "https://weatherstations.nyuchi.com/callback",
     "NYUCHI_API_URL": "https://api.nyuchi.com",
     "NYUCHI_INGEST_HOST": "weather-ingest.nyuchi.com",
   },
