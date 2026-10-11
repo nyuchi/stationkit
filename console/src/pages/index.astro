@@ -11,9 +11,10 @@ export const prerender = false;
  * owners get the console. Everything under /api/stations is session-gated.
  */
 const user = Astro.locals.auth?.user ?? null;
-const { config } = runtime();
+// Anonymous visitors never touch runtime config.
+const config = user ? runtime().config : null;
 ---
 
 <Base title={user ? "Station console | StationKit by Nyuchi" : "StationKit by Nyuchi"}>
-  {user ? <Console email={user.email ?? ""} ingestHost={config.ingestHost} mock={config.backend === "mock"} /> : <Landing />}
+  {user ? <Console email={user.email ?? ""} ingestHost={config!.ingestHost} backend={config!.backend} /> : <Landing />}
 </Base>

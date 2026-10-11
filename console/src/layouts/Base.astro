@@ -1,6 +1,14 @@
 ---
 import "../styles/global.css";
 import MineralStrip from "../components/mzizi/site-mineral-strip.astro";
+// Self-hosted fonts (latin subset): no third-party request, strict CSP.
+import "@fontsource/noto-sans/latin-400.css";
+import "@fontsource/noto-sans/latin-500.css";
+import "@fontsource/noto-sans/latin-600.css";
+import "@fontsource/noto-serif/latin-500.css";
+import "@fontsource/noto-serif/latin-600.css";
+import "@fontsource/jetbrains-mono/latin-400.css";
+import "@fontsource/jetbrains-mono/latin-500.css";
 
 interface Props {
   title: string;
@@ -22,12 +30,6 @@ const {
     <meta name="color-scheme" content="light dark" />
     <title>{title}</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans:wght@400;500;600&family=Noto+Serif:wght@500;600&display=swap"
-    />
     <script is:inline src="/theme-init.js"></script>
   </head>
   <body class="bg-background text-foreground font-sans antialiased">

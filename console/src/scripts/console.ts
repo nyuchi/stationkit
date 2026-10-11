@@ -137,7 +137,8 @@ function init(): void {
       );
       if (li) {
         paint(li, s);
-        if (announce) q("[data-station-result]", li)!.textContent = "Status updated";
+        if (announce)
+          q("[data-station-result]", li)!.textContent = "Status updated";
       }
     } catch (err) {
       const message = handleFailure(err, "Could not refresh status");

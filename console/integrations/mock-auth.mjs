@@ -8,7 +8,7 @@ const at = (rel) => fileURLToPath(new URL(rel, import.meta.url));
  */
 export function mockAuth() {
   return {
-    name: "mukoko-station-console-mock-auth",
+    name: "stationkit-console-mock-auth",
     hooks: {
       "astro:config:setup": ({ addMiddleware, injectRoute }) => {
         if (process.env.WORKERS_CI || process.env.CF_PAGES) {

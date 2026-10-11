@@ -29,7 +29,9 @@ describe("parseRegisterInput", () => {
   it("keeps trimmed hardware and drops blank hardware", () => {
     expect(
       parseRegisterInput({ ...ok, hardware: " Ecowitt WS2910 " }),
-    ).toMatchObject({ value: { hardware: "Ecowitt WS2910" } });
+    ).toMatchObject({
+      value: { hardware: "Ecowitt WS2910" },
+    });
     const blank = parseRegisterInput({ ...ok, hardware: "  " });
     expect(blank.ok && "hardware" in blank.value).toBe(false);
   });

@@ -98,7 +98,10 @@ describe("MockStationsClient", () => {
     const { stationId } = await client.register(alice, input);
     expect(
       await client.submitReading(alice, stationId, { temperatureC: 99 }),
-    ).toEqual({ accepted: 0, qcStatus: "rejected" });
+    ).toEqual({
+      accepted: 0,
+      qcStatus: "rejected",
+    });
     expect(
       (await client.status(alice, stationId)).lastObservationAt,
     ).toBeNull();
@@ -130,7 +133,8 @@ describe("MockStationsClient", () => {
         stationKey: MOCK_LEGACY_STATION.key,
       }),
     ).rejects.toSatisfy((e) => status(e) === 404);
-    for (let i = 0; i < MOCK_STATION_CAP; i++) await bare.register(alice, input);
+    for (let i = 0; i < MOCK_STATION_CAP; i++)
+      await bare.register(alice, input);
     await expect(bare.register(alice, input)).rejects.toSatisfy(
       (e) => status(e) === 429,
     );

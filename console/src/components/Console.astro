@@ -17,10 +17,11 @@ import { READING_FIELDS } from "../lib/stations/types";
 interface Props {
   email: string;
   ingestHost: string;
-  /** True when the in-memory demo backend is serving (development only). */
-  mock?: boolean;
+  /** Which backend serves the console. */
+  backend: "mock" | "nyuchi";
 }
-const { email, ingestHost, mock = false } = Astro.props;
+const { email, ingestHost, backend } = Astro.props;
+const mock = backend === "mock";
 
 const READING_LABELS: Record<(typeof READING_FIELDS)[number], string> = {
   temperatureC: "Temperature (°C)",
@@ -67,6 +68,15 @@ const READING_LABELS: Record<(typeof READING_FIELDS)[number], string> = {
       mock && (
         <Alert variant="info" title="Demo mode">
           Stations here live in memory and nothing reaches the Nyuchi platform. Credentials shown are not real.
+        </Alert>
+      )
+    }
+
+    {
+      backend === "nyuchi" && (
+        <Alert variant="warning" title="Not live yet">
+          Registering stations, listing them, status and key rotation are not live on the Nyuchi API yet, so those actions will fail
+          for now. Logging a reading for a station you already hold a key for uses the drafted readings call.
         </Alert>
       )
     }

@@ -26,7 +26,12 @@ const check = (ok, label) => {
 // The build copies .dev.vars into dist/server, which is where `astro preview`
 // (workerd) reads secrets from, so it must exist BEFORE the build.
 function build(extra, vars = {}) {
-  writeFileSync(".dev.vars", Object.entries(vars).map(([k, v]) => `${k}=${v}`).join("\n") + "\n");
+  writeFileSync(
+    ".dev.vars",
+    Object.entries(vars)
+      .map(([k, v]) => `${k}=${v}`)
+      .join("\n") + "\n",
+  );
   const r = spawnSync("npx", ["astro", "build"], {
     env: { ...process.env, ...extra },
     stdio: ["ignore", "ignore", "inherit"],
@@ -38,8 +43,14 @@ function build(extra, vars = {}) {
 async function withPreview(extra, run) {
   const child = spawn(
     process.execPath,
-    ["node_modules/astro/bin/astro.mjs", "preview", "--ignore-lock", "--port", String(PORT)],
-    { env: { ...process.env, ...(extra.env ?? {}) }, stdio: "ignore", detached: true },
+    [
+      "node_modules/astro/bin/astro.mjs",
+      "preview",
+      "--ignore-lock",
+      "--port",
+      String(PORT),
+    ],
+    { env: { ...process.env, ...extra.env }, stdio: "ignore", detached: true },
   );
   try {
     for (let i = 0; i < 60; i++) {
@@ -65,16 +76,40 @@ build({ AUTH_MODE: "workos" }, workos);
 await withPreview({}, async () => {
   const home = await fetch(`${base}/`, { redirect: "manual" });
   check(home.status === 200, "workos: / is 200");
-  check((await home.text()).includes("StationKit"), "workos: / is the landing page");
+  check(
+    (await home.text()).includes("StationKit"),
+    "workos: / is the landing page",
+  );
   const api = await fetch(`${base}/api/stations`, { redirect: "manual" });
   check(api.status === 401, "workos: /api/stations is 401 when anonymous");
-  check(api.headers.get("cache-control")?.includes("no-store") === true, "workos: 401 is no-store");
-  check(api.headers.get("x-frame-options") === "DENY", "workos: 401 has X-Frame-Options");
-  check(api.headers.get("x-content-type-options") === "nosniff", "workos: 401 has nosniff");
-  check(home.headers.get("content-security-policy")?.includes("frame-ancestors 'none'") === true, "workos: CSP frame-ancestors header");
+  check(
+    api.headers.get("cache-control")?.includes("no-store") === true,
+    "workos: 401 is no-store",
+  );
+  check(
+    api.headers.get("x-frame-options") === "DENY",
+    "workos: 401 has X-Frame-Options",
+  );
+  check(
+    api.headers.get("x-content-type-options") === "nosniff",
+    "workos: 401 has nosniff",
+  );
+  check(
+    home.headers
+      .get("content-security-policy")
+      ?.includes("frame-ancestors 'none'") === true,
+    "workos: CSP frame-ancestors header",
+  );
   const csp = home.headers.get("content-security-policy") ?? "";
-  check(/default-src 'self'/.test(csp) && /object-src 'none'/.test(csp), "workos: strict CSP (default-src self, object-src none)");
-  check(/script-src 'self'/.test(csp) && !/script-src[^;]*unsafe-(inline|eval)/.test(csp), "workos: script-src is self plus hashes, no unsafe-inline");
+  check(
+    /default-src 'self'/.test(csp) && /object-src 'none'/.test(csp),
+    "workos: strict CSP (default-src self, object-src none)",
+  );
+  check(
+    /script-src 'self'/.test(csp) &&
+      !/script-src[^;]*unsafe-(inline|eval)/.test(csp),
+    "workos: script-src is self plus hashes, no unsafe-inline",
+  );
 });
 
 // 2. Mock auth in a production bundle must refuse to serve.

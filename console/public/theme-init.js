@@ -13,7 +13,10 @@
   }
   function apply() {
     var p = preference();
-    document.documentElement.classList.toggle("dark", p === "dark" || (p === "system" && media.matches));
+    document.documentElement.classList.toggle(
+      "dark",
+      p === "dark" || (p === "system" && media.matches),
+    );
   }
   apply();
   media.addEventListener("change", apply);

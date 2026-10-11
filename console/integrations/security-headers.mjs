@@ -13,7 +13,10 @@ export function securityHeaders() {
     name: "stationkit-console-security-headers",
     hooks: {
       "astro:config:setup": ({ addMiddleware }) => {
-        addMiddleware({ entrypoint: at("../src/lib/headers-middleware.ts"), order: "pre" });
+        addMiddleware({
+          entrypoint: at("../src/lib/headers-middleware.ts"),
+          order: "pre",
+        });
       },
     },
   };

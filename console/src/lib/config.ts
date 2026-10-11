@@ -32,12 +32,20 @@ export interface ConfigContext {
  * mocking, and the mock backend is refused outright in production: it would
  * hand real owners credentials the platform never issued.
  */
-export function resolveConfig(raw: RawConfig, ctx: ConfigContext = { prod: false }): ConsoleConfig {
-  const requested = raw.STATIONS_BACKEND?.trim() || (ctx.prod ? "nyuchi" : "mock");
+export function resolveConfig(
+  raw: RawConfig,
+  ctx: ConfigContext = { prod: false },
+): ConsoleConfig {
+  const requested =
+    raw.STATIONS_BACKEND?.trim() || (ctx.prod ? "nyuchi" : "mock");
   if (requested !== "mock" && requested !== "nyuchi")
-    throw new Error(`STATIONS_BACKEND must be "mock" or "nyuchi", got "${requested}"`);
+    throw new Error(
+      `STATIONS_BACKEND must be "mock" or "nyuchi", got "${requested}"`,
+    );
   if (requested === "mock" && ctx.prod)
-    throw new Error("STATIONS_BACKEND=mock is not allowed in a production runtime");
+    throw new Error(
+      "STATIONS_BACKEND=mock is not allowed in a production runtime",
+    );
 
   let parsed: URL;
   try {
@@ -50,7 +58,8 @@ export function resolveConfig(raw: RawConfig, ctx: ConfigContext = { prod: false
   const nyuchiApiUrl = parsed.origin + parsed.pathname.replace(/\/+$/, "");
 
   const ingestHost = raw.NYUCHI_INGEST_HOST?.trim() || DEFAULT_INGEST_HOST;
-  if (!HOST_RE.test(ingestHost)) throw new Error("NYUCHI_INGEST_HOST must be a host name");
+  if (!HOST_RE.test(ingestHost))
+    throw new Error("NYUCHI_INGEST_HOST must be a host name");
 
   return { backend: requested, nyuchiApiUrl, ingestHost };
 }
@@ -62,7 +71,10 @@ export function createStationsClient(
   config: ConsoleConfig,
   options: { fetchImpl?: typeof fetch; seedDemo?: boolean } = {},
 ): StationsClient {
-  if (config.backend === "nyuchi") return new NyuchiStationsClient(config.nyuchiApiUrl, options.fetchImpl);
-  mockSingleton ??= new MockStationsClient({ seedDemo: options.seedDemo ?? false });
+  if (config.backend === "nyuchi")
+    return new NyuchiStationsClient(config.nyuchiApiUrl, options.fetchImpl);
+  mockSingleton ??= new MockStationsClient({
+    seedDemo: options.seedDemo ?? false,
+  });
   return mockSingleton;
 }

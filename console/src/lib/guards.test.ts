@@ -65,8 +65,12 @@ describe("data egress (no database in the front end)", () => {
       ].sort(),
     );
     // The browser never reaches the ingest or legacy station endpoints itself.
-    for (const f of mine.filter((x) => /\/(scripts|pages)\/|api-client/.test(rel(x)))) {
-      expect(text(f), rel(f)).not.toMatch(/\/stations\/(register|status|manual|ingest)\b/);
+    for (const f of mine.filter((x) =>
+      /\/(scripts|pages)\/|api-client/.test(rel(x)),
+    )) {
+      expect(text(f), rel(f)).not.toMatch(
+        /\/stations\/(register|status|manual|ingest)\b/,
+      );
     }
   });
   it("the browser code calls same-origin /api/stations only", () => {
@@ -117,7 +121,7 @@ describe("Mzizi styling rules", () => {
     expect(base).not.toContain('data-brand="weather"');
     expect(base).toContain('src="/theme-init.js"');
     const init = text(join(root, "public/theme-init.js"));
-    expect(init).toContain('classList.toggle("dark"');
+    expect(init).toMatch(/classList\s*\.toggle\(\s*"dark"/);
     expect(init).toContain("prefers-color-scheme");
   });
 });
@@ -161,7 +165,10 @@ describe("a Nyuchi product that talks to Nyuchi only", () => {
     "integrations/mock-auth.mjs",
     "integrations/security-headers.mjs",
   ].map((f) => join(root, f));
-  const scanned = [...mine.filter((f) => /\.(ts|astro|css)$/.test(f)), ...configFiles];
+  const scanned = [
+    ...mine.filter((f) => /\.(ts|astro|css)$/.test(f)),
+    ...configFiles,
+  ];
 
   it("never references a mukoko.com host or an /api/py route", () => {
     for (const f of scanned) {
@@ -171,24 +178,32 @@ describe("a Nyuchi product that talks to Nyuchi only", () => {
   });
 
   it("is branded StationKit by Nyuchi, not Mukoko", () => {
-    for (const f of mine.filter((x) => /\.(ts|astro)$/.test(x))) {
+    for (const f of [
+      ...mine.filter((x) => /\.(ts|astro)$/.test(x)),
+      ...configFiles,
+    ]) {
       expect(text(f), rel(f)).not.toMatch(/mukoko/i);
     }
     const links = text(join(srcDir, "lib/links.ts"));
     expect(links).toContain("hi@nyuchi.com");
     expect(links).toContain("Rima uchiziva. Farm knowing.");
-    expect(text(join(srcDir, "components/Landing.astro"))).toContain("PRODUCT_NAME");
+    expect(text(join(srcDir, "components/Landing.astro"))).toContain(
+      "PRODUCT_NAME",
+    );
   });
 
   it("points hardware at the confirmed Nyuchi ingest host and the API at api.nyuchi.com", () => {
     const ingest = text(join(srcDir, "lib/ingest.ts"));
     expect(ingest).toContain('"weather-ingest.nyuchi.com"');
     expect(ingest).toContain('"/stations/ingest"');
-    expect(text(join(srcDir, "lib/config.ts"))).toContain('"https://api.nyuchi.com"');
+    expect(text(join(srcDir, "lib/config.ts"))).toContain(
+      '"https://api.nyuchi.com"',
+    );
   });
 
   it("every absolute URL in the app is on a Nyuchi, Bundu or font host", () => {
-    const allowed = /^https?:\/\/([a-z0-9-]+\.)*(nyuchi\.com|bundu\.org|github\.com|fonts\.googleapis\.com|fonts\.gstatic\.com|example\.test|localhost)(?=[:/"'\s]|$)/i;
+    const allowed =
+      /^https?:\/\/([a-z0-9-]+\.)*(nyuchi\.com|bundu\.org|github\.com|example\.test|localhost)(?=[:/"'\s]|$)/i;
     for (const f of scanned.filter((x) => !x.endsWith("package.json"))) {
       for (const m of text(f).matchAll(/https?:\/\/[^\s"'`)<>]+/g)) {
         expect(m[0], rel(f)).toMatch(allowed);
@@ -200,8 +215,14 @@ describe("a Nyuchi product that talks to Nyuchi only", () => {
     const config = text(join(root, "astro.config.mjs"));
     expect(config).toContain("default-src 'self'");
     expect(config).toContain("object-src 'none'");
-    expect(text(join(srcDir, "lib/config.ts"))).toContain("not allowed in a production runtime");
-    expect(text(join(srcDir, "auth/mock-middleware.ts"))).toContain("import.meta.env.PROD");
-    expect(text(join(srcDir, "pages/auth/signout.ts"))).not.toMatch(/export const GET/);
+    expect(text(join(srcDir, "lib/config.ts"))).toContain(
+      "not allowed in a production runtime",
+    );
+    expect(text(join(srcDir, "auth/mock-middleware.ts"))).toContain(
+      "import.meta.env.PROD",
+    );
+    expect(text(join(srcDir, "pages/auth/signout.ts"))).not.toMatch(
+      /export const GET/,
+    );
   });
 });

@@ -57,8 +57,8 @@ describe("withFrameAncestors", () => {
     const r = new Response("x", {
       headers: { "Content-Security-Policy": "default-src 'self'" },
     });
-    expect(
-      applyHeaders(r, "/").headers.get("Content-Security-Policy"),
-    ).toBe("default-src 'self'; frame-ancestors 'none'");
+    expect(applyHeaders(r, "/").headers.get("Content-Security-Policy")).toBe(
+      "default-src 'self'; frame-ancestors 'none'",
+    );
   });
 });

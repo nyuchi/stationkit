@@ -29,24 +29,45 @@ describe("resolveConfig", () => {
   });
 
   it("refuses the mock backend in production, however it is requested", () => {
-    expect(() => resolveConfig({ STATIONS_BACKEND: "mock" }, prod)).toThrow(/not allowed in a production/);
-    expect(resolveConfig({ STATIONS_BACKEND: "mock" }, dev).backend).toBe("mock");
+    expect(() => resolveConfig({ STATIONS_BACKEND: "mock" }, prod)).toThrow(
+      /not allowed in a production/,
+    );
+    expect(resolveConfig({ STATIONS_BACKEND: "mock" }, dev).backend).toBe(
+      "mock",
+    );
   });
 
   it("validates the API URL: absolute, https (or localhost), no trailing slash", () => {
-    expect(() => resolveConfig({ NYUCHI_API_URL: "not a url" }, dev)).toThrow(/absolute/);
-    expect(() => resolveConfig({ NYUCHI_API_URL: "http://api.example.test" }, dev)).toThrow(/https/);
-    expect(resolveConfig({ NYUCHI_API_URL: "https://api.example.test/base/" }, dev).nyuchiApiUrl).toBe("https://api.example.test/base");
-    expect(resolveConfig({ NYUCHI_API_URL: "http://localhost:8000" }, dev).nyuchiApiUrl).toBe("http://localhost:8000");
+    expect(() => resolveConfig({ NYUCHI_API_URL: "not a url" }, dev)).toThrow(
+      /absolute/,
+    );
+    expect(() =>
+      resolveConfig({ NYUCHI_API_URL: "http://api.example.test" }, dev),
+    ).toThrow(/https/);
+    expect(
+      resolveConfig({ NYUCHI_API_URL: "https://api.example.test/base/" }, dev)
+        .nyuchiApiUrl,
+    ).toBe("https://api.example.test/base");
+    expect(
+      resolveConfig({ NYUCHI_API_URL: "http://localhost:8000" }, dev)
+        .nyuchiApiUrl,
+    ).toBe("http://localhost:8000");
   });
 
   it("rejects an unknown backend instead of silently mocking", () => {
-    expect(() => resolveConfig({ STATIONS_BACKEND: "mongo" }, dev)).toThrow(/mock.*nyuchi/);
+    expect(() => resolveConfig({ STATIONS_BACKEND: "mongo" }, dev)).toThrow(
+      /mock.*nyuchi/,
+    );
   });
 
   it("validates the ingest host", () => {
-    expect(resolveConfig({ NYUCHI_INGEST_HOST: "ingest.example.test" }, dev).ingestHost).toBe("ingest.example.test");
-    expect(() => resolveConfig({ NYUCHI_INGEST_HOST: "evil.test/<script>" }, dev)).toThrow(/host/);
+    expect(
+      resolveConfig({ NYUCHI_INGEST_HOST: "ingest.example.test" }, dev)
+        .ingestHost,
+    ).toBe("ingest.example.test");
+    expect(() =>
+      resolveConfig({ NYUCHI_INGEST_HOST: "evil.test/<script>" }, dev),
+    ).toThrow(/host/);
   });
 });
 
@@ -55,6 +76,8 @@ describe("createStationsClient", () => {
     const a = createStationsClient(resolveConfig({}, dev));
     expect(a).toBeInstanceOf(MockStationsClient);
     expect(createStationsClient(resolveConfig({}, dev))).toBe(a);
-    expect(createStationsClient(resolveConfig({ STATIONS_BACKEND: "nyuchi" }, dev))).toBeInstanceOf(NyuchiStationsClient);
+    expect(
+      createStationsClient(resolveConfig({ STATIONS_BACKEND: "nyuchi" }, dev)),
+    ).toBeInstanceOf(NyuchiStationsClient);
   });
 });

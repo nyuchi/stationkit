@@ -9,7 +9,11 @@ describe("callerFrom", () => {
   it("maps the session user and keeps the token server-side", () => {
     expect(
       callerFrom({ user: { id: "u1", email: "a@b.test" }, accessToken: "t" }),
-    ).toEqual({ personId: "u1", email: "a@b.test", accessToken: "t" });
+    ).toEqual({
+      personId: "u1",
+      email: "a@b.test",
+      accessToken: "t",
+    });
     expect(callerFrom({ user: { id: "u1" } })?.email).toBe("");
   });
 });

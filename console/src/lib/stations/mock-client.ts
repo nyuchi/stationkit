@@ -130,7 +130,10 @@ export class MockStationsClient implements StationsClient {
   ): Promise<IssuedCredentials & { stationType: StationType }> {
     await this.seeded;
     if (this.stations.size >= MOCK_STATION_CAP)
-      throw new StationsApiError(429, "The demo backend is full. Restart the dev server.");
+      throw new StationsApiError(
+        429,
+        "The demo backend is full. Restart the dev server.",
+      );
     const stationId = randomStationId();
     const ingestKey = randomKey();
     this.stations.set(stationId, {

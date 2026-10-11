@@ -19,10 +19,12 @@ only API it talks to is `api.nyuchi.com`.
 | `POST /v1/stations/{id}/readings`                                                                     | **Drafted** in [issue 5](https://github.com/nyuchi/stationkit/issues/5) ("TODO: confirm"). The client follows the draft                                       |
 | `POST /v1/stations`, `GET /v1/stations`, `GET /v1/stations/{id}`, `POST /v1/stations/{id}/rotate-key` | **Not built.** Proposed by the weather repo's migration plan (issue 293, section 5.3). Live `api.nyuchi.com` answers 404 to `POST /v1/stations` on 2026-10-11 |
 | Real WorkOS sign-in                                                                                   | Wired, **not exercised**: needs the owner-registered redirect URI and credentials                                                                             |
-| Cloudflare Workers deploy                                                                             | Config only. Nothing is deployed from this PR                                                                                                                 |
+| Cloudflare Workers deploy                                                                             | Config only (`workers_dev` and `preview_urls` off). Nothing is deployed from this PR                                                                          |
 
-Until the station endpoints exist, `STATIONS_BACKEND=nyuchi` shows errors for
-register, list, status and rotate. The mock backend is development-only and is
+Until the station endpoints exist, `STATIONS_BACKEND=nyuchi` answers 503
+("Station registration is not live yet") for register, list, status and rotate
+without calling the network, and the console shows a "Not live yet" notice.
+A 404 from list or register is reported as "service unavailable". The mock backend is development-only and is
 **refused in a production runtime**.
 
 ## Shape
@@ -60,7 +62,7 @@ GET only and stays reachable by URL, a known limit of the integration.
 `src/lib/headers.ts` (headers as data) is applied by a `pre` middleware that is
 registered **before** AuthKit, so AuthKit's own 401s and redirects carry the
 headers too. Astro emits a strict CSP with hashes for its own inline code
-(`self`, plus Google Fonts for styles and fonts); `frame-ancestors 'none'` is
+(`self` only; the fonts are self-hosted from `@fontsource`, so no third-party request); `frame-ancestors 'none'` is
 appended. The BFF, auth routes, `/callback` and the console page are
 `no-store`.
 
@@ -89,8 +91,15 @@ npm run test:e2e   # Playwright smoke against the mock (Chromium required)
 ```
 
 `.npmrc` sets `legacy-peer-deps=true` because npm 10 crashes resolving the
-optional `react` peer of `@workos/authkit-astro` (the console has no React),
-and `min-release-age=7`.
+optional `react` peer of `@workos/authkit-astro` (the console has no React).
+It also sets `min-release-age=7` (do not resolve versions published in the last
+7 days). That option exists from npm 11.10; npm 10 ignores it, so CI on Node 22
+(npm 10) does not enforce it yet. It is there for npm 11 and for the Semgrep
+rule that asks for it.
+
+`@workos/authkit-astro` is the official WorkOS package (MIT, repository
+`workos/authkit-astro`, published by WorkOS maintainers with npm SLSA
+provenance); it is pinned to 0.2.1 and `npm audit signatures` verifies it.
 
 ## Configuration
 

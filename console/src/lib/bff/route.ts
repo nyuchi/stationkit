@@ -30,5 +30,17 @@ export async function withCaller(
 ): Promise<Response> {
   const caller = callerFrom(context.locals.auth);
   if (!caller) return toResponse(unauthenticated());
-  return toResponse(await run(runtime().client, caller));
+  let client: StationsClient;
+  try {
+    client = runtime().client;
+  } catch {
+    // A misconfigured deploy must answer JSON, not an HTML error page.
+    return toResponse({
+      status: 500,
+      body: {
+        error: "The console is not configured correctly. Try again later.",
+      },
+    });
+  }
+  return toResponse(await run(client, caller));
 }

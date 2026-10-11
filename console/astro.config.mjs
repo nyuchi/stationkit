@@ -40,7 +40,7 @@ export default defineConfig({
     csp: {
       directives: [
         "default-src 'self'",
-        "font-src https://fonts.gstatic.com",
+        "font-src 'self'",
         "img-src 'self' data:",
         "connect-src 'self'",
         "base-uri 'self'",
@@ -48,7 +48,7 @@ export default defineConfig({
         "object-src 'none'",
       ],
       scriptDirective: { resources: ["'self'"] },
-      styleDirective: { resources: ["'self'", "https://fonts.googleapis.com"] },
+      styleDirective: { resources: ["'self'"] },
     },
   },
   env: {
@@ -61,8 +61,16 @@ export default defineConfig({
         values: ["mock", "nyuchi"],
         optional: true,
       }),
-      NYUCHI_API_URL: envField.string({ context: "server", access: "secret", optional: true }),
-      NYUCHI_INGEST_HOST: envField.string({ context: "server", access: "secret", optional: true }),
+      NYUCHI_API_URL: envField.string({
+        context: "server",
+        access: "secret",
+        optional: true,
+      }),
+      NYUCHI_INGEST_HOST: envField.string({
+        context: "server",
+        access: "secret",
+        optional: true,
+      }),
     },
   },
 });
