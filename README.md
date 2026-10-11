@@ -13,16 +13,15 @@
 
 ## Read this first
 
-**This repository contains no firmware and no hardware designs yet.** Its whole
-tree today is a licence, the org lint gate, and this file. The `firmware/` and
+**This repository contains no firmware and no hardware designs yet.** Its tree
+today is a licence, the org lint gate, the station console under `console/`, and this file. The `firmware/` and
 `hardware/` directories described on the product page do not exist here.
 
 That is not a gap in the product — the network is live, it is just built
 elsewhere for now. The parts that run in production are the pilot signup on
 [nyuchi.com](https://nyuchi.com/stationkit/signup), the fleet console at
 [weatherstations.nyuchi.com](https://weatherstations.nyuchi.com), and the
-station ingest and quality-control pipeline inside
-[mukoko weather](https://weather.mukoko.com). This repo is the home reserved
+station ingest at `weather-ingest.nyuchi.com`. This repo is the home reserved
 for the device side: the ESP-IDF firmware and the open hardware designs.
 
 The specification for both is written down and tracked here as issues, not as
@@ -60,10 +59,17 @@ station observes  →  Bundu commons        →  mukoko weather      →  Shamwa
 **You do not need StationKit hardware to join.** Any weather station of any
 make can push readings into the same commons and get the same forecasts back.
 Consumer stations that speak the Weather Underground or Ecowitt "custom upload"
-protocols point at the mukoko weather ingest endpoints directly; analog
+protocols point at the Nyuchi ingest endpoint (`weather-ingest.nyuchi.com`) directly; analog
 stations — a rain gauge and a thermometer — submit readings by hand through the
 console. There is no vendor lock-in, and there is no requirement to buy
 anything.
+
+## Repository layout
+
+| Path                     | What it is                                                                                                                                                                          |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `console/`               | The station console: an Astro app for `weatherstations.nyuchi.com`. Built and tested against a mock backend; see [console/README.md](console/README.md) for what is and is not live |
+| `firmware/`, `hardware/` | **Do not exist yet.** The device side is still specification only, tracked in the issues above                                                                                      |
 
 ## Target specification
 
@@ -106,7 +112,7 @@ _My station improves your forecast. Your station improves mine._
 
 | Repo / service                                                   | What it is                                                                  |
 | ---------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [weather.mukoko.com](https://weather.mukoko.com)                 | Consumer forecasts; hosts the station ingest and QC pipeline                |
+| [weather.mukoko.com](https://weather.mukoko.com)                 | Consumer forecasts; reads the validated observations                        |
 | [weatherstations.nyuchi.com](https://weatherstations.nyuchi.com) | Fleet console — register a station, get credentials, submit manual readings |
 | [nyuchi.com/stationkit](https://nyuchi.com/stationkit)           | Product page and pilot signup                                               |
 | [bundu.org](https://bundu.org)                                   | The foundation that governs the data commons                                |

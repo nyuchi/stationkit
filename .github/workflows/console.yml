@@ -1,0 +1,62 @@
+name: Console
+
+# The StationKit console (console/): an Astro app on Cloudflare Workers.
+# Type-check, unit tests, production-bundle guards, build and the Playwright
+# smoke against the mock backend. Path-filtered so firmware/docs PRs skip it.
+on:
+  pull_request:
+    paths:
+      - "console/**"
+      - ".github/workflows/console.yml"
+  push:
+    branches: [main, staging]
+    paths:
+      - "console/**"
+      - ".github/workflows/console.yml"
+
+concurrency:
+  group: console-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  console:
+    name: Console - check, test, build, e2e
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: console
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Type check (astro check)
+        run: npm run check
+
+      - name: Lint (tsc)
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production bundle guards (WorkOS 401, mock refused, CSP)
+        run: npm run test:prod
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright smoke (mock backend, mock session)
+        run: npm run test:e2e
