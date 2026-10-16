@@ -256,21 +256,30 @@ describe("WorkOS credentials", () => {
     }
   });
 
-  it("configures AuthKit at runtime from the Worker env, not from astro:env", () => {
-    const mw = text(join(srcDir, "auth/workos-middleware.ts"));
-    expect(mw).toContain('from "cloudflare:workers"');
-    expect(mw).toContain("resolveWorkosConfig");
-    expect(mw).not.toContain("astro:env");
+  it("wires the real runtime path: Worker env, no astro:env, no logging", () => {
+    const wiring = text(join(srcDir, "auth/workos-middleware.ts"));
+    const core = text(join(srcDir, "auth/workos-middleware-core.ts"));
+    expect(wiring).toContain('from "cloudflare:workers"');
+    expect(wiring).not.toContain("astro:env");
+    expect(core).toContain("resolveWorkosConfig");
+    expect(core).toContain("() => undefined");
     expect(text(join(srcDir, "auth/workos-config.ts"))).toContain(".get()");
     expect(text(join(root, "astro.config.mjs"))).not.toContain('from "@workos/authkit-astro"');
+    for (const f of ["workos-middleware.ts", "workos-middleware-core.ts", "workos-config.ts"])
+      expect(text(join(srcDir, "auth", f)), f).not.toMatch(/console\./);
   });
 
-  it("answers JSON 500 and fails closed on bad config, and never logs", () => {
-    const mw = text(join(srcDir, "auth/workos-middleware.ts"));
-    expect(mw).toContain("status: 500");
-    expect(mw).toContain("application/json");
-    expect(mw).toMatch(/auth:\s*unknown|user: null/);
-    for (const f of ["workos-middleware.ts", "workos-config.ts"])
-      expect(text(join(srcDir, "auth", f)), f).not.toMatch(/console\.|JSON\.stringify\(\s*env/);
+  it("only ever reaches logout by POST, and the injected routes check the config flag", () => {
+    expect(text(join(srcDir, "auth/workos-logout.ts"))).toMatch(/export const POST/);
+    expect(text(join(srcDir, "auth/workos-logout.ts"))).not.toMatch(/export const GET/);
+    expect(text(join(srcDir, "auth/mock-logout.ts"))).not.toMatch(/export const GET/);
+    expect(text(join(srcDir, "pages/auth/signout.ts"))).toContain("/auth/logout");
+    for (const f of ["workos-signin.ts", "workos-callback.ts", "workos-logout.ts"])
+      expect(text(join(srcDir, "auth", f)), f).toContain("requireConfigured");
+  });
+
+  it("answers a fixed message when the callback fails, never WorkOS's text", () => {
+    const cb = text(join(srcDir, "auth/workos-callback.ts"));
+    expect(cb).toContain("onError");
   });
 });

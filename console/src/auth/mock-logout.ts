@@ -12,5 +12,4 @@ const clear: APIRoute = () =>
     },
   });
 
-export const GET = clear;
 export const POST = clear;

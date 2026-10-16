@@ -92,7 +92,6 @@ await withPreview({}, async () => {
   );
   check(!/sk_|WORKOS|CONSOLE_WORKOS/.test(body), "workos: 500 body names no secret");
   const signin = await fetch(`${base}/auth/signin`, { redirect: "manual" });
-  console.log("signin status", signin.status, signin.headers.get("location"));
   check(signin.status === 500, "workos: sign-in fails closed (no redirect) without config");
   check(
     api.headers.get("cache-control")?.includes("no-store") === true,

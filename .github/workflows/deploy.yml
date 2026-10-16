@@ -81,6 +81,11 @@ jobs:
             echo "::error::Missing in the production environment:$missing"
             exit 1
           fi
+          # The id is substituted into JSON below: it must be a plain 32-hex id.
+          if ! printf %s "$CONSOLE_SECRETS_STORE_ID" | grep -Eq '^[0-9a-f]{32}$'; then
+            echo "::error::CONSOLE_SECRETS_STORE_ID must be 32 lowercase hex characters"
+            exit 1
+          fi
 
       # The production bundle: WorkOS auth, the Nyuchi backend. The earlier
       # test:prod step builds mock variants, so build again here.

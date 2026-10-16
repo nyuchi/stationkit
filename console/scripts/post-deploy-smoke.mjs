@@ -21,14 +21,14 @@ const check = (ok, label) => {
   console.log(`${ok ? "ok  " : "FAIL"} ${label}`);
   if (!ok) failures.push(label);
 };
-const get = (path) =>
+const get = (path, accept) =>
   fetch(new URL(path, base), {
     redirect: "manual",
-    headers: { accept: "text/html,application/json" },
+    headers: { accept },
     signal: AbortSignal.timeout(15_000),
   });
 
-const home = await get("/");
+const home = await get("/", "text/html");
 const html = await home.text();
 check(home.status === 200, "/ is 200");
 check(html.includes("StationKit"), "/ is the StationKit landing page");
@@ -50,7 +50,7 @@ check(
   "/ is no-store",
 );
 
-const api = await get("/api/stations");
+const api = await get("/api/stations", "application/json");
 const body = await api.text();
 check(api.status === 401, "/api/stations is 401 when anonymous");
 check(

@@ -73,16 +73,37 @@ package's `authkitMiddleware`:
 replace it yourself. Nothing is invented: neither the store id nor any value is
 in the repository, and no value is ever logged.
 
-Fail closed: if the key or any setting is missing or invalid, `/api/*` answers
-a JSON 500 (with the security headers), every other request continues with no
-session, and the sign-in routes error, so a broken deploy cannot grant access.
-The happy path (a real Secrets Store key) cannot run in a local preview, so it
-is covered by unit tests of `resolveWorkosConfig` and by the post-deploy smoke.
+Details that matter:
+
+- The library reads `process.env` before anything it is given, so a leftover
+  plain Worker secret named `WORKOS_API_KEY` (or `WORKOS_CLIENT_ID`,
+  `WORKOS_REDIRECT_URI`, `WORKOS_COOKIE_PASSWORD`) could beat the Secrets Store
+  value. The middleware replaces the library's environment source, so none of
+  them can. Still, **delete any `WORKOS_API_KEY` Worker secret**; only the
+  Secrets Store entry should exist.
+- The Secrets Store read is cached for 2 minutes (a rotation takes effect within
+  that), dropped on a failed read, and skipped for prerendered pages. A plain
+  string key (`.dev.vars`) is accepted in development only.
+- Session cookie: `__Host-wos-session` over https (a week, not the library's 400
+  days); the library's default name over plain-http local dev.
+- Fail closed, per request: if the key or any setting is missing or invalid,
+  `/api/*` answers a JSON 500 (with the security headers), every other request
+  continues with no session, and `/auth/signin`, `/callback` and `/auth/logout`
+  refuse with a 500 even if an earlier request in the same isolate configured
+  AuthKit. No value is ever logged or named in an answer.
+- `/callback` failures answer a fixed message; the WorkOS `error`,
+  `error_description` and exception text are never reflected.
+- The happy path with a real Secrets Store key cannot run in a local preview. It
+  is covered by behavioural tests that run the package's real middleware (store
+  value configured, leftover `process.env` ignored, anonymous `/api/stations`
+  is 401 for `Accept: application/json` and 302 for HTML, missing config is a 500) and by the post-deploy smoke.
+
 `AUTH_MODE=mock` replaces WorkOS with a cookie session for development and
 tests; it is refused on Workers Builds and answers 500 in any production bundle,
-which is the guard for deploys outside Workers Builds. `/auth/signout` takes
-POST only. The package's `/auth/logout` route is GET only and stays reachable
-by URL, a known limit.
+which is the guard for deploys outside Workers Builds. Sign-out is POST only
+end to end: the account menu posts to `/auth/signout`, which forwards with a 307
+to `POST /auth/logout`, so Astro's origin check protects it and a link on
+another site cannot sign anyone out.
 
 ## Deploying
 

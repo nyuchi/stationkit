@@ -3,6 +3,8 @@
 declare namespace App {
   interface Locals {
     auth: import("./auth/session").AuthLike;
+    /** Set by the WorkOS middleware: this request resolved a valid config. */
+    workosConfigOk?: boolean;
   }
 }
 

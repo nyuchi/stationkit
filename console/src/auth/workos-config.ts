@@ -44,14 +44,48 @@ function isBinding(v: unknown): v is SecretsStoreBinding {
   );
 }
 
-async function readApiKey(binding: unknown): Promise<string | null> {
-  if (typeof binding === "string") return binding || null;
-  if (!isBinding(binding)) return null;
+/** How long a Secrets Store read is reused (a rotation takes effect within it). */
+export const KEY_CACHE_TTL_MS = 120_000;
+
+interface KeyCache {
+  value: string;
+  at: number;
+}
+let keyCache: KeyCache | null = null;
+
+/** Test hook: forget the cached key. */
+export function resetKeyCache(): void {
+  keyCache = null;
+}
+
+export interface ResolveOptions {
+  /** A production runtime: a plain string key is refused (dev only). */
+  prod?: boolean;
+  now?: () => number;
+}
+
+async function readApiKey(
+  binding: unknown,
+  opts: ResolveOptions,
+): Promise<string | null> {
+  // A plain string is a local `.dev.vars` convenience. In production only the
+  // Secrets Store binding may supply the key, so a stray Worker secret of the
+  // same name can never stand in for it.
+  if (typeof binding === "string") return opts.prod ? null : binding || null;
+  if (!isBinding(binding)) {
+    keyCache = null;
+    return null;
+  }
+  const now = (opts.now ?? Date.now)();
+  if (keyCache && now - keyCache.at < KEY_CACHE_TTL_MS) return keyCache.value;
   try {
-    return (await binding.get()) || null;
+    const value = (await binding.get()) || null;
+    keyCache = value ? { value, at: now } : null;
+    return value;
   } catch {
-    // A failed Secrets Store read is "missing", never an exception that could
-    // carry detail upstream.
+    // A failed Secrets Store read is "missing" and drops the cache, never an
+    // exception that could carry detail upstream.
+    keyCache = null;
     return null;
   }
 }
@@ -63,6 +97,7 @@ function text(v: unknown): string | null {
 /** Validates and assembles the AuthKit config. Fails closed: any gap is `ok: false`. */
 export async function resolveWorkosConfig(
   env: WorkosEnv,
+  opts: ResolveOptions = {},
 ): Promise<WorkosConfigResult> {
   const clientId = text(env.WORKOS_CLIENT_ID);
   const redirectUri = text(env.WORKOS_REDIRECT_URI);
@@ -70,7 +105,7 @@ export async function resolveWorkosConfig(
     typeof env.WORKOS_COOKIE_PASSWORD === "string"
       ? env.WORKOS_COOKIE_PASSWORD
       : null;
-  const apiKey = await readApiKey(env.CONSOLE_WORKOS_API_KEY);
+  const apiKey = await readApiKey(env.CONSOLE_WORKOS_API_KEY, opts);
 
   const problems: string[] = [];
   if (!clientId) problems.push("WORKOS_CLIENT_ID");
@@ -102,7 +137,17 @@ export async function resolveWorkosConfig(
   };
 }
 
-/** A stable change-detector so AuthKit is reconfigured only when a value changes. */
-export function fingerprint(c: WorkosConfig): string {
-  return JSON.stringify([c.clientId, c.apiKey, c.redirectUri, c.cookiePassword]);
+/**
+ * A change-detector so AuthKit is reconfigured only when a value changes. It is
+ * a SHA-256 digest, so the key and the cookie password are never kept as text
+ * just to compare them.
+ */
+export async function fingerprint(c: WorkosConfig): Promise<string> {
+  const data = new TextEncoder().encode(
+    JSON.stringify([c.clientId, c.apiKey, c.redirectUri, c.cookiePassword]),
+  );
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
 }
