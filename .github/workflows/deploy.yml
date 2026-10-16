@@ -1,0 +1,123 @@
+name: Deploy console
+
+# Deploys console/ to Cloudflare Workers. Never runs on a pull request: only a
+# manual dispatch or a push to main. The `production` GitHub Environment holds
+# the credentials and can carry required reviewers.
+#
+# Reads, and nothing else:
+#   secrets.CLOUDFLARE_API_TOKEN      Cloudflare API token (Workers deploy)
+#   vars.CLOUDFLARE_ACCOUNT_ID        Cloudflare account id
+#   vars.CONSOLE_SECRETS_STORE_ID     Secrets Store id that holds CONSOLE_WORKOS_API_KEY
+#   vars.CONSOLE_SMOKE_URL            optional, https URL the smoke check calls
+# The Worker's own secret WORKOS_COOKIE_PASSWORD is set with
+# `wrangler secret put`, not by this workflow.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "console/**"
+      - ".github/workflows/deploy.yml"
+
+concurrency:
+  group: deploy-console
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build, deploy, smoke
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: console
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Type check (astro check)
+        run: npm run check
+
+      - name: Lint (tsc)
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production bundle guards
+        run: npm run test:prod
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright smoke (mock backend, mock session)
+        run: npm run test:e2e
+
+      - name: Check deploy inputs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CONSOLE_SECRETS_STORE_ID: ${{ vars.CONSOLE_SECRETS_STORE_ID }}
+        run: |
+          missing=""
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN(secret)"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID(var)"
+          [ -n "$CONSOLE_SECRETS_STORE_ID" ] || missing="$missing CONSOLE_SECRETS_STORE_ID(var)"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing in the production environment:$missing"
+            exit 1
+          fi
+          # The id is substituted into JSON below: it must be a plain 32-hex id.
+          if ! printf %s "$CONSOLE_SECRETS_STORE_ID" | grep -Eq '^[0-9a-f]{32}$'; then
+            echo "::error::CONSOLE_SECRETS_STORE_ID must be 32 lowercase hex characters"
+            exit 1
+          fi
+
+      # The production bundle: WorkOS auth, the Nyuchi backend. The earlier
+      # test:prod step builds mock variants, so build again here.
+      - name: Build for production
+        run: npm run build
+
+      - name: Set the Secrets Store id in the built config
+        env:
+          CONSOLE_SECRETS_STORE_ID: ${{ vars.CONSOLE_SECRETS_STORE_ID }}
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const f = "dist/server/wrangler.json";
+            const s = fs.readFileSync(f, "utf8");
+            if (!s.includes("REPLACE_WITH_SECRETS_STORE_ID")) { console.error("placeholder not found in built config"); process.exit(1); }
+            fs.writeFileSync(f, s.replaceAll("REPLACE_WITH_SECRETS_STORE_ID", process.env.CONSOLE_SECRETS_STORE_ID));
+          '
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@da0e0dfe58b7a431659754fdf3f186c529afbe65 # v3.14.1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: console
+          command: deploy
+
+      - name: Post-deploy smoke
+        env:
+          SMOKE_URL: ${{ vars.CONSOLE_SMOKE_URL }}
+        run: |
+          if [ -z "$SMOKE_URL" ]; then
+            echo "::warning::CONSOLE_SMOKE_URL is not set; skipping the post-deploy smoke check."
+            exit 0
+          fi
+          node scripts/post-deploy-smoke.mjs

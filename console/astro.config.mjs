@@ -1,37 +1,42 @@
 import cloudflare from "@astrojs/cloudflare";
 import tailwindcss from "@tailwindcss/vite";
-import authkit from "@workos/authkit-astro";
 import { defineConfig, envField } from "astro/config";
 
 import { mockAuth } from "./integrations/mock-auth.mjs";
 import { securityHeaders } from "./integrations/security-headers.mjs";
+import { workosAuth } from "./integrations/workos-auth.mjs";
 
 // AUTH_MODE=mock swaps WorkOS for a cookie session so the UI and the
 // Playwright smoke run without credentials. It is refused on Workers Builds
 // and in any production runtime (see src/auth/mock-middleware.ts).
 const authMode = process.env.AUTH_MODE === "mock" ? "mock" : "workos";
 
-const auth =
-  authMode === "mock"
-    ? mockAuth()
-    : authkit({
-        // The BFF answers 401 JSON to fetch(); pages decide for themselves
-        // (anonymous visitors get the landing page at "/").
-        protectedRoutes: ["/api/stations"],
-        signInPath: "/auth/signin",
-        loginPath: "/auth/signin",
-        logoutPath: "/auth/logout",
-        callbackPath: "/callback",
-        afterSignOutUrl: "/",
-        hydrateClient: false,
-      });
+const auth = authMode === "mock" ? mockAuth() : workosAuth();
 
 export default defineConfig({
   output: "server",
   adapter: cloudflare({ imageService: "passthrough" }),
   session: false,
   integrations: [securityHeaders(), auth],
-  vite: { plugins: [tailwindcss()] },
+  vite: {
+    plugins: [
+      tailwindcss(),
+      {
+        // The AuthKit package root also holds its build-time integration,
+        // which imports `astro/config`; bundling that into the Worker breaks
+        // the build. The runtime code never uses it, so stub it there.
+        name: "stationkit-stub-astro-config-in-authkit",
+        enforce: "pre",
+        resolveId(id, importer) {
+          if (id === "astro/config" && importer?.includes("@workos/authkit-astro"))
+            return "\0stub-astro-config";
+        },
+        load(id) {
+          if (id === "\0stub-astro-config") return "export const envField = {};";
+        },
+      },
+    ],
+  },
   security: {
     checkOrigin: true,
     // Ingest keys are shown on this page and kept in localStorage, so a strict

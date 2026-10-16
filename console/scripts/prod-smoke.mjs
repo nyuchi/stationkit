@@ -1,8 +1,9 @@
 // Production-bundle smoke: builds the app the way it is deployed and checks the
 // guards that dev-mode tests cannot see. Plain Node, no test runner.
 //
-//   1. WorkOS mode: "/" is the landing page; /api/stations answers 401 JSON
-//      WITH the security and no-store headers (AuthKit short-circuits it).
+//   1. WorkOS mode: "/" is the landing page; with the Secrets Store key
+//      unavailable, /api/stations and sign-in fail closed (JSON 500) WITH the
+//      security and no-store headers.
 //   2. AUTH_MODE=mock in a production bundle answers 500 (the guard that
 //      protects deploys outside Workers Builds).
 import { spawn, spawnSync } from "node:child_process";
@@ -10,11 +11,10 @@ import { rmSync, writeFileSync } from "node:fs";
 
 const PORT = 4399;
 const base = `http://localhost:${PORT}`;
+// Only the cookie password: the API key lives in the Secrets Store, which is
+// not available to a local preview, so this exercises the fail-closed path.
 const workos = {
-  WORKOS_CLIENT_ID: "client_00000000000000000000000000",
-  WORKOS_API_KEY: "sk_test_00000000000000000000000000",
   WORKOS_COOKIE_PASSWORD: "0123456789abcdef0123456789abcdef0123",
-  WORKOS_REDIRECT_URI: `${base}/callback`,
 };
 
 const failures = [];
@@ -80,19 +80,30 @@ await withPreview({}, async () => {
     (await home.text()).includes("StationKit"),
     "workos: / is the landing page",
   );
+  // The Secrets Store key is not available locally, so this is the fail-closed
+  // path: JSON 500 (with the headers), never a 200 or a session.
   const api = await fetch(`${base}/api/stations`, { redirect: "manual" });
-  check(api.status === 401, "workos: /api/stations is 401 when anonymous");
+  const body = await api.text();
+  check(api.status === 500, "workos: /api/stations is 500 when config is missing");
+  check(
+    (api.headers.get("content-type") ?? "").includes("application/json") &&
+      body.includes("not configured correctly"),
+    "workos: bad config answers a JSON 500",
+  );
+  check(!/sk_|WORKOS|CONSOLE_WORKOS/.test(body), "workos: 500 body names no secret");
+  const signin = await fetch(`${base}/auth/signin`, { redirect: "manual" });
+  check(signin.status === 500, "workos: sign-in fails closed (no redirect) without config");
   check(
     api.headers.get("cache-control")?.includes("no-store") === true,
-    "workos: 401 is no-store",
+    "workos: 500 is no-store",
   );
   check(
     api.headers.get("x-frame-options") === "DENY",
-    "workos: 401 has X-Frame-Options",
+    "workos: 500 has X-Frame-Options",
   );
   check(
     api.headers.get("x-content-type-options") === "nosniff",
-    "workos: 401 has nosniff",
+    "workos: 500 has nosniff",
   );
   check(
     home.headers

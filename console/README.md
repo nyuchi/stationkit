@@ -49,13 +49,73 @@ A 404 from list or register is reported as "service unavailable". The mock backe
 
 ## Authentication
 
-`@workos/authkit-astro` (pinned) with the shared Nyuchi WorkOS credentials.
-Register `https://weatherstations.nyuchi.com/callback` (and any preview alias)
-as a redirect URI. `AUTH_MODE=mock` replaces it with a cookie session for
-development and tests. Mock auth is refused on Workers Builds and answers 500
-in any production bundle, which is the guard for deploys outside Workers
-Builds. `/auth/signout` takes POST only. The upstream `/auth/logout` route is
-GET only and stays reachable by URL, a known limit of the integration.
+WorkOS AuthKit, Nyuchi Console app (client id `client_01KQBBSMQTSMTBN7HEC9KQBJC0`,
+a public plain var; `https://weatherstations.nyuchi.com/callback` is already
+registered on it). The package is `@workos/authkit-astro` (pinned).
+
+The package's own integration reads its settings from build-time `astro:env`
+strings, which cannot take a Cloudflare Secrets Store binding, so
+`integrations/workos-auth.mjs` injects the same routes
+(`/auth/signin`, `/callback`, `/auth/logout`) and a middleware that resolves
+the settings **at runtime** (`src/auth/workos-config.ts`) and then runs the
+package's `authkitMiddleware`:
+
+| Setting                  | Where it lives                                                                                                                                       |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WORKOS_CLIENT_ID`       | plain var in `wrangler.jsonc` (public)                                                                                                               |
+| `WORKOS_REDIRECT_URI`    | plain var in `wrangler.jsonc` (public)                                                                                                               |
+| WorkOS API key           | Secrets Store secret `CONSOLE_WORKOS_API_KEY`, bound as `CONSOLE_WORKOS_API_KEY`, read with `await env.CONSOLE_WORKOS_API_KEY.get()` on each request |
+| `WORKOS_COOKIE_PASSWORD` | a separate Worker secret (`wrangler secret put WORKOS_COOKIE_PASSWORD`), 32+ characters                                                              |
+
+**Owner action:** `wrangler.jsonc` carries the placeholder store id
+`REPLACE_WITH_SECRETS_STORE_ID`. The deploy workflow substitutes
+`vars.CONSOLE_SECRETS_STORE_ID` into the built config; for a manual deploy
+replace it yourself. Nothing is invented: neither the store id nor any value is
+in the repository, and no value is ever logged.
+
+Details that matter:
+
+- The library reads `process.env` before anything it is given, so a leftover
+  plain Worker secret named `WORKOS_API_KEY` (or `WORKOS_CLIENT_ID`,
+  `WORKOS_REDIRECT_URI`, `WORKOS_COOKIE_PASSWORD`) could beat the Secrets Store
+  value. The middleware replaces the library's environment source, so none of
+  them can. Still, **delete any `WORKOS_API_KEY` Worker secret**; only the
+  Secrets Store entry should exist.
+- The Secrets Store read is cached for 2 minutes (a rotation takes effect within
+  that), dropped on a failed read, and skipped for prerendered pages. A plain
+  string key (`.dev.vars`) is accepted in development only.
+- Session cookie: `__Host-wos-session` over https (a week, not the library's 400
+  days); the library's default name over plain-http local dev.
+- Fail closed, per request: if the key or any setting is missing or invalid,
+  `/api/*` answers a JSON 500 (with the security headers), every other request
+  continues with no session, and `/auth/signin`, `/callback` and `/auth/logout`
+  refuse with a 500 even if an earlier request in the same isolate configured
+  AuthKit. No value is ever logged or named in an answer.
+- `/callback` failures answer a fixed message; the WorkOS `error`,
+  `error_description` and exception text are never reflected.
+- The happy path with a real Secrets Store key cannot run in a local preview. It
+  is covered by behavioural tests that run the package's real middleware (store
+  value configured, leftover `process.env` ignored, anonymous `/api/stations`
+  is 401 for `Accept: application/json` and 302 for HTML, missing config is a 500) and by the post-deploy smoke.
+
+`AUTH_MODE=mock` replaces WorkOS with a cookie session for development and
+tests; it is refused on Workers Builds and answers 500 in any production bundle,
+which is the guard for deploys outside Workers Builds. Sign-out is POST only
+end to end: the account menu posts to `/auth/signout`, which forwards with a 307
+to `POST /auth/logout`, so Astro's origin check protects it and a link on
+another site cannot sign anyone out.
+
+## Deploying
+
+`.github/workflows/deploy.yml` runs on a manual dispatch or a push to `main`
+(never on a pull request), in the `production` GitHub Environment. It repeats
+the console checks, builds, substitutes the store id, deploys with
+`cloudflare/wrangler-action` (pinned to a commit), then runs
+`scripts/post-deploy-smoke.mjs` against `vars.CONSOLE_SMOKE_URL` (skipped with a
+warning if unset). It reads only: secret `CLOUDFLARE_API_TOKEN`, and vars
+`CLOUDFLARE_ACCOUNT_ID`, `CONSOLE_SECRETS_STORE_ID`, `CONSOLE_SMOKE_URL`. It
+adds no route or custom domain: `workers_dev` and `preview_urls` are off, so
+the Worker is unreachable until the domain is attached at cutover.
 
 ## Security headers
 
@@ -82,11 +142,11 @@ the Mzizi strip (vertical, left edge).
 ```bash
 npm ci
 npm run dev        # mock backend, mock session, http://localhost:4321
-npm run dev:workos # real WorkOS (needs the WORKOS_* variables)
+npm run dev:workos # real WorkOS (needs .dev.vars, see .env.example)
 npm run check      # astro check
 npm run lint       # tsc over the TypeScript
 npm test           # Vitest
-npm run test:prod  # builds as deployed; WorkOS 401 + headers, mock refused, CSP
+npm run test:prod  # builds as deployed; WorkOS fail-closed JSON 500 + headers, mock refused, CSP
 npm run test:e2e   # Playwright smoke against the mock (Chromium required)
 ```
 
@@ -105,5 +165,6 @@ provenance); it is pinned to 0.2.1 and `npm audit signatures` verifies it.
 
 Names only; see `.env.example`. `STATIONS_BACKEND`, `NYUCHI_API_URL` and
 `NYUCHI_INGEST_HOST` are runtime values (not inlined at build). The Worker's
-non-secret values are in `wrangler.jsonc`; WorkOS values are secrets
-(`wrangler secret put`).
+non-secret values are in `wrangler.jsonc`. The WorkOS API key is the Secrets
+Store binding `CONSOLE_WORKOS_API_KEY`; the cookie password is a Worker secret
+(`wrangler secret put WORKOS_COOKIE_PASSWORD`).
