@@ -1,5 +1,11 @@
 import { INGEST_PATH } from "../ingest";
-import type { StationSummary, StationType } from "./types";
+import type {
+  IngestSetup,
+  ReadingField,
+  ReadingResult,
+  StationSummary,
+  StationType,
+} from "./types";
 import type { StoredStation } from "./store";
 
 export interface ConsoleStation {
@@ -46,16 +52,27 @@ export interface SetupInstructions {
   ecowitt: string;
 }
 
-/** Setup text for station hardware; the host is the one hardware already uses. */
+/**
+ * Setup text for station hardware. Where the Nyuchi API said where a station
+ * uploads (its `ingest` field, at registration) that is what is shown, per
+ * protocol. Where it said nothing (a rotated key) the console's configured
+ * host and the path hardware already uses stand in.
+ */
 export function setupInstructions(
-  host: string,
+  fallbackHost: string,
   stationId: string,
+  ingest?: IngestSetup | null,
 ): SetupInstructions {
-  return {
-    host,
+  const wu = ingest?.wunderground ?? {
+    server: fallbackHost,
     path: INGEST_PATH,
-    wunderground: `Wunderground protocol: server ${host}, path ${INGEST_PATH}, ID = ${stationId}, PASSWORD = your ingest key`,
-    ecowitt: `Ecowitt protocol: server ${host}, path ${INGEST_PATH}, PASSKEY = ${stationId}:<your ingest key>`,
+  };
+  const ec = ingest?.ecowitt ?? { server: fallbackHost, path: INGEST_PATH };
+  return {
+    host: wu.server,
+    path: wu.path,
+    wunderground: `Wunderground protocol: server ${wu.server}, path ${wu.path}, ID = ${stationId}, PASSWORD = your ingest key`,
+    ecowitt: `Ecowitt protocol: server ${ec.server}, path ${ec.path}, PASSKEY = ${stationId}:<your ingest key>`,
   };
 }
 
@@ -84,11 +101,43 @@ export function describeLastReading(
   return `Last reading ${d.toLocaleString(locale)}`;
 }
 
-export function describeReadingResult(res: {
-  accepted: number;
-  qcStatus: string;
-}): string {
-  return res.qcStatus === "validated"
-    ? `Saved. ${res.accepted} measurement(s) accepted`
+/** What a person calls each reading field, for saying which one was refused. */
+export const READING_FIELD_NAMES: Record<ReadingField, string> = {
+  temperatureC: "temperature",
+  rainfallMm: "rain",
+  humidityPercent: "humidity",
+  pressureHpa: "pressure",
+  windKph: "wind",
+};
+
+/**
+ * `measurements` is how many values the person entered. The API counts
+ * readings, not measurements, and a manual reading is stored whole or not at
+ * all, so the number shown is the one they typed.
+ */
+export function describeReadingResult(
+  res: Pick<ReadingResult, "qcStatus"> &
+    Partial<Pick<ReadingResult, "problems">>,
+  measurements: number,
+): string {
+  if (res.qcStatus === "validated")
+    return `Saved. ${measurements} measurement(s) accepted`;
+  const reasons = [
+    ...new Set(
+      (res.problems ?? []).flatMap((p) =>
+        p.field
+          ? [
+              `${READING_FIELD_NAMES[p.field]} ${
+                p.code === "out_of_range"
+                  ? "is out of range"
+                  : "was not accepted"
+              }`,
+            ]
+          : [],
+      ),
+    ),
+  ];
+  return reasons.length
+    ? `Rejected by quality checks: ${reasons.join("; ")}`
     : "Rejected by quality checks";
 }

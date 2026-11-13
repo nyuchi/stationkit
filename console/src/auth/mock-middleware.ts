@@ -13,7 +13,9 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const user = slug ? mockUser(slug) : null;
   (context.locals as unknown as { auth: unknown }).auth = {
     user,
-    accessToken: user ? "mock-access-token" : undefined,
+    // One per person, as a real AuthKit token is, so the real client can be
+    // tried against a fake Nyuchi API that tells people apart by it.
+    accessToken: slug ? `mock-access-token.${slug}` : undefined,
   };
   return next();
 });

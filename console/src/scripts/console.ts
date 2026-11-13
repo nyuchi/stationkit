@@ -4,6 +4,7 @@
  * through textContent. Logic lives in src/lib (unit-tested); this file only
  * wires it to the DOM.
  */
+import { mapLimit } from "../lib/concurrency";
 import { DEFAULT_INGEST_HOST } from "../lib/ingest";
 import { ConsoleApi, ConsoleApiError } from "../lib/stations/api-client";
 import {
@@ -22,7 +23,11 @@ import {
   mergeStations,
   setupInstructions,
 } from "../lib/stations/view-model";
-import type { StationStatus, StationType } from "../lib/stations/types";
+import type {
+  IngestSetup,
+  StationStatus,
+  StationType,
+} from "../lib/stations/types";
 import {
   parseReadingInput,
   parseRegisterInput,
@@ -57,6 +62,8 @@ function init(): void {
   let local: StoredStation[] = loadStations(storage());
   let stations: ConsoleStation[] = mergeStations([], local);
   const statuses = new Map<string, StationStatus>();
+  // Statuses are asked for a few at a time (see lib/concurrency.ts).
+  const STATUS_CONCURRENCY = 4;
 
   const showError = (message: string | null) => {
     errorBox.hidden = message === null;
@@ -118,8 +125,12 @@ function init(): void {
         label?.setAttribute("for", unique);
       }
       // Rotation is an owner action; a key alone cannot rotate itself.
+      // Claiming is the other way round: only a key held on this device
+      // can take over a legacy station, and an owner has nothing to claim.
       if (s.access === "key")
         q("[data-action=rotate]", li)!.setAttribute("hidden", "");
+      if (s.access === "owner" || !s.key)
+        q("[data-action=claim]", li)!.setAttribute("hidden", "");
       paint(li, s);
       list.append(li);
     }
@@ -165,11 +176,24 @@ function init(): void {
       );
     }
     render();
-    await Promise.all(stations.map((s) => refreshStatus(s)));
+    await mapLimit(stations, STATUS_CONCURRENCY, (s) => refreshStatus(s));
   }
 
-  function showCredentials(stationId: string, ingestKey: string) {
-    const ins = setupInstructions(ingestHost, stationId);
+  function announce(stationId: string, text: string) {
+    const li = list.querySelector<HTMLElement>(
+      `[data-station-id="${CSS.escape(stationId)}"]`,
+    );
+    const result = li ? q("[data-station-result]", li) : null;
+    if (result) result.textContent = text;
+  }
+
+  /** `ingest` is where the API said the station uploads; absent, the configured host stands in. */
+  function showCredentials(
+    stationId: string,
+    ingestKey: string,
+    ingest?: IngestSetup,
+  ) {
+    const ins = setupInstructions(ingestHost, stationId, ingest);
     q("[data-cred-id]", credsBox)!.textContent = stationId;
     q("[data-cred-key]", credsBox)!.textContent = ingestKey;
     q("[data-cred-wunderground]", credsBox)!.textContent = ins.wunderground;
@@ -193,6 +217,7 @@ function init(): void {
       lat: field("lat").value,
       lon: field("lon").value,
       stationType: type,
+      country: field("country").value,
       hardware: field("hardware").value,
     });
     if (!parsed.ok) return showError(parsed.error);
@@ -212,7 +237,7 @@ function init(): void {
           stationType: parsed.value.stationType,
         }),
       );
-      showCredentials(issued.stationId, issued.ingestKey);
+      showCredentials(issued.stationId, issued.ingestKey, issued.ingest);
       form.reset();
       await loadAll();
     } catch (err) {
@@ -264,6 +289,22 @@ function init(): void {
       } else {
         render();
       }
+    } else if (action === "claim" && station && li) {
+      if (!station.key) {
+        announce(station.stationId, "No key for this station is saved here.");
+        return;
+      }
+      announce(station.stationId, "Claiming");
+      try {
+        await api.claim(station.stationId, station.key);
+        await loadAll();
+        announce(station.stationId, "Claimed. This station is now yours.");
+      } catch (err) {
+        announce(
+          station.stationId,
+          handleFailure(err, "Could not claim the station"),
+        );
+      }
     } else if (action === "rotate" && station && li) {
       if (
         !window.confirm(
@@ -284,7 +325,7 @@ function init(): void {
               }),
         );
         station.key = issued.ingestKey;
-        showCredentials(issued.stationId, issued.ingestKey);
+        showCredentials(issued.stationId, issued.ingestKey, issued.ingest);
       } catch (err) {
         showError(handleFailure(err, "Could not rotate the key"));
       }
@@ -323,7 +364,10 @@ function init(): void {
         parsed.value,
         station.access === "key" ? station.key : undefined,
       );
-      result.textContent = describeReadingResult(res);
+      result.textContent = describeReadingResult(
+        res,
+        Object.keys(parsed.value).length,
+      );
       if (res.qcStatus === "validated") formEl.reset();
       await refreshStatus(station);
     } catch (err) {

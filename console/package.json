@@ -13,7 +13,8 @@
     "lint": "astro sync && tsc --noEmit -p tsconfig.lint.json",
     "test": "vitest run",
     "test:e2e": "AUTH_MODE=mock playwright test",
-    "test:prod": "node scripts/prod-smoke.mjs"
+    "test:prod": "node scripts/prod-smoke.mjs",
+    "test:e2e:nyuchi": "AUTH_MODE=mock playwright test -c playwright.nyuchi.config.ts"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.3.4",

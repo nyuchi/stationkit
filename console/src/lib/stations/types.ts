@@ -11,13 +11,32 @@ export interface RegisterInput {
   lat: number;
   lon: number;
   stationType: StationType;
+  /** ISO 3166-1 alpha-2, upper case. Sent on every registration: the API files an omitted one under ZW. */
+  country: string;
   hardware?: string;
+}
+
+/** Where one hardware protocol uploads, as the API told us at registration. */
+export interface IngestHint {
+  server: string;
+  path: string;
+}
+
+/** The API's `ingest` field: the upload target per protocol. */
+export interface IngestSetup {
+  wunderground: IngestHint;
+  ecowitt: IngestHint;
 }
 
 /** Returned once, at registration or key rotation. */
 export interface IssuedCredentials {
   stationId: string;
   ingestKey: string;
+  /**
+   * Set at registration, from the API. Absent when the API sent none (key
+   * rotation answers none), and then the console shows its configured host.
+   */
+  ingest?: IngestSetup | undefined;
 }
 
 export interface RegisteredStation extends IssuedCredentials {
@@ -49,16 +68,25 @@ export const READING_FIELDS = [
 export type ReadingField = (typeof READING_FIELDS)[number];
 export type ReadingInput = Partial<Record<ReadingField, number>>;
 
+/** Why a reading was refused: the field and a code, never the value. */
+export interface ReadingProblem {
+  field: ReadingField | null;
+  code: string;
+}
+
 export interface ReadingResult {
+  /** Readings stored (or stored before: a retry). Not a count of measurements. */
   accepted: number;
+  rejected: number;
   qcStatus: "validated" | "rejected";
+  problems: ReadingProblem[];
 }
 
 /** Who is calling the BFF: always derived from the server-side session. */
 export interface Caller {
   personId: string;
   email: string;
-  /** WorkOS access token; forwarded to the Nyuchi API, never to the browser. */
+  /** WorkOS access token; exchanged for an API token, never sent to the browser. */
   accessToken?: string | undefined;
 }
 
@@ -94,4 +122,10 @@ export interface StationsClient {
     auth?: KeyAuth,
   ): Promise<ReadingResult>;
   rotateKey(caller: Caller, stationId: string): Promise<IssuedCredentials>;
+  /** Take over a legacy (community) station by proving the station's key. */
+  claim(
+    caller: Caller,
+    stationId: string,
+    auth: KeyAuth,
+  ): Promise<StationSummary>;
 }

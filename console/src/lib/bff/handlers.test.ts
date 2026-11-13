@@ -8,6 +8,7 @@ import {
 import {
   type BffRequest,
   checkWrite,
+  claimStation,
   listStations,
   registerStation,
   rotateKey,
@@ -28,7 +29,13 @@ const req = (
   json: async () => over.body ?? {},
   ...over,
 });
-const valid = { name: "Farm", lat: -17, lon: 31, stationType: "digital" };
+const valid = {
+  name: "Farm",
+  lat: -17,
+  lon: 31,
+  stationType: "digital",
+  country: "ZW",
+};
 
 describe("checkWrite", () => {
   it("allows same-origin JSON and absent Origin (non-browser)", () => {
@@ -56,6 +63,17 @@ describe("register", () => {
       stationId: expect.stringMatching(/^mws-/),
       ingestKey: expect.any(String),
     });
+  });
+  it("400 without a country, never calling the client", async () => {
+    const client = { register: vi.fn() } as unknown as StationsClient;
+    const { country: _omitted, ...withoutCountry } = valid;
+    const r = await registerStation(
+      client,
+      caller,
+      req({ body: withoutCountry }),
+    );
+    expect(r.status).toBe(400);
+    expect(client.register).not.toHaveBeenCalled();
   });
   it("400 on invalid input, never calling the client", async () => {
     const client = { register: vi.fn() } as unknown as StationsClient;
@@ -95,6 +113,7 @@ describe("list / status / readings / rotate", () => {
       lat: 0,
       lon: 0,
       stationType: "digital",
+      country: "ZW",
     });
     const r = await listStations(client, caller);
     expect((r.body as { stations: unknown[] }).stations).toHaveLength(1);
@@ -128,7 +147,7 @@ describe("list / status / readings / rotate", () => {
     const client = new MockStationsClient();
     const { stationId, ingestKey } = await client.register(
       { personId: "owner", email: "" },
-      { name: "F", lat: 0, lon: 0, stationType: "manual" },
+      { name: "F", lat: 0, lon: 0, stationType: "manual", country: "ZW" },
     );
     const viaKey = await stationStatus(
       client,
@@ -149,7 +168,7 @@ describe("list / status / readings / rotate", () => {
     );
     expect(ok).toEqual({
       status: 200,
-      body: { accepted: 1, qcStatus: "validated" },
+      body: { accepted: 1, rejected: 0, qcStatus: "validated", problems: [] },
     });
     expect(
       (
@@ -161,6 +180,48 @@ describe("list / status / readings / rotate", () => {
         )
       ).status,
     ).toBe(400);
+  });
+
+  it("refuses a station key that is not a key before it goes anywhere", async () => {
+    const client = {
+      status: vi.fn(),
+      submitReading: vi.fn(),
+      claim: vi.fn(),
+    } as unknown as StationsClient;
+    const id = "mws-0a0a0a0a";
+    for (const stationKey of [
+      "has a space",
+      "x".repeat(257),
+      "caf\u00e9",
+      "tab\tkey",
+    ]) {
+      expect(
+        (
+          await stationStatus(
+            client,
+            caller,
+            id,
+            req({ method: "GET", stationKey }),
+          )
+        ).status,
+      ).toBe(400);
+      expect(
+        (
+          await submitReading(
+            client,
+            caller,
+            id,
+            req({ stationKey, body: { windKph: 1 } }),
+          )
+        ).status,
+      ).toBe(400);
+      expect(
+        (await claimStation(client, caller, id, req({ stationKey }))).status,
+      ).toBe(400);
+    }
+    expect(client.status).not.toHaveBeenCalled();
+    expect(client.submitReading).not.toHaveBeenCalled();
+    expect(client.claim).not.toHaveBeenCalled();
   });
 
   it("maps StationsApiError to its status and hides unexpected errors", async () => {
@@ -180,6 +241,60 @@ describe("list / status / readings / rotate", () => {
     expect(await listStations(teapot, caller)).toEqual({
       status: 429,
       body: { error: "Slow down" },
+    });
+  });
+});
+
+describe("claim", () => {
+  const legacy = { stationId: "mws-00000001", key: "legacy-demo-key" };
+  const client = () => new MockStationsClient({ seedDemo: true });
+
+  it("takes a legacy station with its key, sent as a header", async () => {
+    const c = client();
+    const r = await claimStation(
+      c,
+      caller,
+      legacy.stationId,
+      req({ stationKey: legacy.key }),
+    );
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ stationId: legacy.stationId });
+    expect((await listStations(c, caller)).body).toMatchObject({
+      stations: [{ stationId: legacy.stationId }],
+    });
+  });
+
+  it("needs the key, a good id and a same-origin request, before any claim", async () => {
+    const c = { claim: vi.fn() } as unknown as StationsClient;
+    expect(
+      (await claimStation(c, caller, legacy.stationId, req())).status,
+    ).toBe(400);
+    expect(
+      (await claimStation(c, caller, "nope", req({ stationKey: "k" }))).status,
+    ).toBe(400);
+    expect(
+      (
+        await claimStation(
+          c,
+          caller,
+          legacy.stationId,
+          req({ stationKey: "k", requestOrigin: "https://evil.example" }),
+        )
+      ).status,
+    ).toBe(403);
+    expect(c.claim).not.toHaveBeenCalled();
+  });
+
+  it("answers the client's error as it is", async () => {
+    const r = await claimStation(
+      client(),
+      caller,
+      legacy.stationId,
+      req({ stationKey: "wrong" }),
+    );
+    expect(r).toEqual({
+      status: 403,
+      body: { error: "That is not this station's key." },
     });
   });
 });

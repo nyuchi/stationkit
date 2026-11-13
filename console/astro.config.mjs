@@ -58,7 +58,8 @@ export default defineConfig({
   },
   env: {
     // All runtime (secret) values, so a deploy can change them without a
-    // rebuild; none of them is a secret, they are just not inlined.
+    // rebuild. Only the last two are real secrets; the others are just not
+    // inlined.
     schema: {
       STATIONS_BACKEND: envField.enum({
         context: "server",
@@ -72,6 +73,18 @@ export default defineConfig({
         optional: true,
       }),
       NYUCHI_INGEST_HOST: envField.string({
+        context: "server",
+        access: "secret",
+        optional: true,
+      }),
+      // The console's own internal key for the Nyuchi API (scopes identity and
+      // stations). Worker secrets (`wrangler secret put`), minted by the owner.
+      NYUCHI_CONSOLE_CLIENT_ID: envField.string({
+        context: "server",
+        access: "secret",
+        optional: true,
+      }),
+      NYUCHI_CONSOLE_CLIENT_SECRET: envField.string({
         context: "server",
         access: "secret",
         optional: true,

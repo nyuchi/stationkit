@@ -21,6 +21,7 @@ async function register(
   await page.getByLabel("Station name").fill(name);
   await page.getByLabel("Latitude").fill("-18.18");
   await page.getByLabel("Longitude").fill("31.55");
+  await page.getByLabel("Country").selectOption("ZW");
   await page
     .getByText(
       type === "Digital"
@@ -164,6 +165,12 @@ test.describe("signed in console", () => {
     await page.getByLabel("Station name").fill("A");
     await page.getByRole("button", { name: "Register station" }).click();
     await expect(page.locator("#console-error")).toContainText(/name/i);
+    // A country is asked for, never guessed: the API files an omitted one under ZW.
+    await page.getByLabel("Station name").fill("Valid name");
+    await page.getByLabel("Latitude").fill("1");
+    await page.getByLabel("Longitude").fill("1");
+    await page.getByRole("button", { name: "Register station" }).click();
+    await expect(page.locator("#console-error")).toContainText(/country/i);
     expect(posts).toBe(0);
   });
 
@@ -217,12 +224,20 @@ test.describe("signed in console", () => {
     await card.getByLabel("Wind (km/h)").fill("12");
     await card.getByRole("button", { name: "Log reading" }).click();
     await expect(card.getByRole("status")).toContainText("Saved");
+    // A key on this device can take the station over; then it is theirs.
+    await card.getByRole("button", { name: "Claim for my account" }).click();
+    await expect(card.getByRole("status")).toContainText(
+      "Claimed. This station is now yours.",
+    );
+    await expect(card).toContainText("Owned by you");
+    await expect(
+      card.getByRole("button", { name: "Rotate key" }),
+    ).toBeVisible();
     await page.evaluate(() =>
       localStorage.setItem("mws-console-stations", "[]"),
     );
-    await card.getByRole("button", { name: "Remove from this device" }).click();
-    await expect(page.locator("[data-station]")).toHaveCount(0);
-    await expect(page.getByText("No stations yet")).toBeVisible();
+    await page.reload();
+    await expect(card).toContainText("Owned by you");
   });
 
   test("rotating a key shows the new key once", async ({ page }) => {
@@ -269,7 +284,13 @@ test.describe("signed in console", () => {
   test("the register response is no-store and unframed", async ({ page }) => {
     await signIn(page, "hdr");
     const res = await page.request.post("/api/stations", {
-      data: { name: "Header check", lat: 1, lon: 1, stationType: "digital" },
+      data: {
+        name: "Header check",
+        lat: 1,
+        lon: 1,
+        stationType: "digital",
+        country: "ZW",
+      },
     });
     expect(res.status()).toBe(201);
     expect(res.headers()["cache-control"]).toContain("no-store");

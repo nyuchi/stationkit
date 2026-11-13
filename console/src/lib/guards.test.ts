@@ -73,6 +73,35 @@ describe("data egress (no database in the front end)", () => {
       );
     }
   });
+  it("the Nyuchi client reaches the API's own routes and no other host or path", () => {
+    const modules = [
+      "src/lib/stations/nyuchi-client.ts",
+      "src/lib/stations/nyuchi-token.ts",
+      "src/lib/stations/nyuchi-errors.ts",
+    ];
+    const paths = new Set<string>();
+    for (const m of modules) {
+      // Code only: a comment may name a route without calling it.
+      const src = text(join(root, m))
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      // No absolute URL: the base is configuration (NYUCHI_API_URL), the rest are paths.
+      expect(src, m).not.toMatch(/https?:\/\//);
+      for (const lit of src.matchAll(/["'`](\/v1\/[^"'`]*)["'`]/g))
+        paths.add(lit[1]!.replace(/\$\{[^}]*\}.*$/, ""));
+    }
+    expect([...paths].sort()).toEqual([
+      "/v1/auth/token",
+      "/v1/identity/persons/ensure",
+      "/v1/stations",
+      "/v1/stations/",
+    ]);
+    // Only the token exchange and the station routes: nothing of a database, a
+    // provider or another service's namespace.
+    expect(text(join(root, "src/lib/stations/nyuchi-client.ts"))).toMatch(
+      /API_ROUTES\s*=\s*\[/,
+    );
+  });
   it("the browser code calls same-origin /api/stations only", () => {
     const calls = [
       ...text(join(srcDir, "lib/stations/api-client.ts")).matchAll(
@@ -80,6 +109,52 @@ describe("data egress (no database in the front end)", () => {
       ),
     ].map((m) => m[1]!);
     for (const c of calls) expect(c).toMatch(/^\/api\/stations/);
+  });
+});
+
+describe("the console's own key for the Nyuchi API", () => {
+  const names = /NYUCHI_CONSOLE_CLIENT_(ID|SECRET)/;
+
+  it("is read in one place and handed only to the Nyuchi client", () => {
+    const holders = mine
+      .filter((f) => /\.(ts|astro)$/.test(f) && names.test(text(f)))
+      .map(rel)
+      .sort();
+    expect(holders).toEqual(["src/lib/config.ts", "src/lib/runtime-config.ts"]);
+    expect(text(join(root, "astro.config.mjs"))).toMatch(
+      /NYUCHI_CONSOLE_CLIENT_ID[\s\S]*access:\s*"secret"[\s\S]*NYUCHI_CONSOLE_CLIENT_SECRET[\s\S]*access:\s*"secret"/,
+    );
+    // Not a page prop, not a BFF body, not a log line.
+    for (const f of mine.filter(
+      (x) => /\/(pages|components|scripts|bff)\//.test(rel(x)) || x.endsWith("api-client.ts"),
+    ))
+      expect(text(f), rel(f)).not.toMatch(
+        /ConsoleCredentials|clientSecret|clientId|NYUCHI_CONSOLE/,
+      );
+  });
+
+  it("is a Worker secret by name only: no var, no value anywhere in the repository", () => {
+    const wrangler = text(join(root, "wrangler.jsonc")).replace(/\/\/.*$/gm, "");
+    expect(wrangler).not.toMatch(names);
+    const example = text(join(root, ".env.example"));
+    for (const name of ["NYUCHI_CONSOLE_CLIENT_ID", "NYUCHI_CONSOLE_CLIENT_SECRET"])
+      expect(example).toMatch(new RegExp(`^${name}=$`, "m"));
+    for (const f of [
+      ...mine.filter((x) => /\.(ts|astro|css)$/.test(x)),
+      join(root, "README.md"),
+      join(root, ".env.example"),
+      join(root, "wrangler.jsonc"),
+    ])
+      expect(text(f), rel(f)).not.toMatch(/\bny[ks]_[A-Za-z0-9]{6,}/);
+  });
+
+  it("is never part of the config object the page reads", () => {
+    const config = text(join(srcDir, "lib/config.ts"));
+    const iface = config.slice(
+      config.indexOf("export interface ConsoleConfig"),
+      config.indexOf("}", config.indexOf("export interface ConsoleConfig")),
+    );
+    expect(iface).not.toMatch(/credential|secret|clientId/i);
   });
 });
 

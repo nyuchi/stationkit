@@ -22,10 +22,17 @@
       "secret_name": "CONSOLE_WORKOS_API_KEY",
     },
   ],
+  // OWNER ACTION: the console's own key for the Nyuchi API (an internal key with
+  // the scopes identity and stations, minted by the owner) is two plain Worker
+  // secrets: `wrangler secret put NYUCHI_CONSOLE_CLIENT_ID` and
+  // `wrangler secret put NYUCHI_CONSOLE_CLIENT_SECRET`. Both or neither; without
+  // them the console answers "Station registration is not live yet" and makes
+  // no call that acts for a person. Names only here, never a value.
   "vars": {
     "WORKOS_CLIENT_ID": "client_01KQBBSMQTSMTBN7HEC9KQBJC0",
     "WORKOS_REDIRECT_URI": "https://weatherstations.nyuchi.com/callback",
     "NYUCHI_API_URL": "https://api.nyuchi.com",
+    // Only the fallback for the setup text: registration shows the host the API names.
     "NYUCHI_INGEST_HOST": "weather-ingest.nyuchi.com",
   },
 }

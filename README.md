@@ -66,10 +66,10 @@ anything.
 
 ## Repository layout
 
-| Path                     | What it is                                                                                                                                                                          |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `console/`               | The station console: an Astro app for `weatherstations.nyuchi.com`. Built and tested against a mock backend; see [console/README.md](console/README.md) for what is and is not live |
-| `firmware/`, `hardware/` | **Do not exist yet.** The device side is still specification only, tracked in the issues above                                                                                      |
+| Path                     | What it is                                                                                                                                                                                                                                           |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `console/`               | The station console: an Astro app for `weatherstations.nyuchi.com`. Built and tested against a mock backend and against a fake Nyuchi API; the real API is not yet exercised. See [console/README.md](console/README.md) for what is and is not live |
+| `firmware/`, `hardware/` | **Do not exist yet.** The device side is still specification only, tracked in the issues above                                                                                                                                                       |
 
 ## Target specification
 
