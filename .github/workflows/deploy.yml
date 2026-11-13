@@ -29,7 +29,9 @@ permissions:
 jobs:
   deploy:
     name: Build, deploy, smoke
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is now Ubuntu 26.04, which Playwright 1.56 cannot
+    # install Chromium on (the same fix as console.yml, #21).
+    runs-on: ubuntu-24.04
     environment: production
     defaults:
       run:
