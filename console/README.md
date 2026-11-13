@@ -13,19 +13,87 @@ only API it talks to is `api.nyuchi.com`.
 
 ## Status: read this first
 
-| Piece                                                                                                 | State                                                                                                                                                         |
-| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| UI, BFF, auth wiring, tests                                                                           | Built and tested against a mock backend                                                                                                                       |
-| `POST /v1/stations/{id}/readings`                                                                     | **Drafted** in [issue 5](https://github.com/nyuchi/stationkit/issues/5) ("TODO: confirm"). The client follows the draft                                       |
-| `POST /v1/stations`, `GET /v1/stations`, `GET /v1/stations/{id}`, `POST /v1/stations/{id}/rotate-key` | **Not built.** Proposed by the weather repo's migration plan (issue 293, section 5.3). Live `api.nyuchi.com` answers 404 to `POST /v1/stations` on 2026-10-11 |
-| Real WorkOS sign-in                                                                                   | Wired, **not exercised**: needs the owner-registered redirect URI and credentials                                                                             |
-| Cloudflare Workers deploy                                                                             | Config only (`workers_dev` and `preview_urls` off). Nothing is deployed from this PR                                                                          |
+| Piece                                   | State                                                                                                                                                                                                                     |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UI, BFF, auth wiring                    | Built. Tested against the mock backend, and against a fake Nyuchi API with the real client                                                                                                                                |
+| Real client (`STATIONS_BACKEND=nyuchi`) | Built against the Nyuchi API's contract: register, list, status, manual readings, rotate the key and claim a legacy station (nyuchi-api B1, pull requests 540, 541 and 542). **Never run against the real API or WorkOS** |
+| Station routes on `api.nyuchi.com`      | Built in nyuchi-api `staging`. Not deployed or applied: until the owner applies the station indexes every route answers `503 stations_unavailable`, which the console shows as "Station registration is not live yet"     |
+| The console's own key for the API       | **Owner step.** The real client acts for a person with it; without it those actions answer the same "not live yet" and make no call (a station's own key still opens its status and readings)                             |
+| Real WorkOS sign-in                     | Wired, **not exercised**: needs the owner-registered redirect URI and credentials                                                                                                                                         |
+| Cloudflare Workers deploy               | Config only (`workers_dev` and `preview_urls` off). Nothing is deployed from this repository, and the production domain is not attached                                                                                   |
 
-Until the station endpoints exist, `STATIONS_BACKEND=nyuchi` answers 503
-("Station registration is not live yet") for register, list, status and rotate
-without calling the network, and the console shows a "Not live yet" notice.
-A 404 from list or register is reported as "service unavailable". The mock backend is development-only and is
-**refused in a production runtime**.
+`STATIONS_BACKEND=mock` is the default in development and is **refused in a
+production runtime**; a production runtime defaults to `nyuchi`.
+
+## The Nyuchi client
+
+The browser calls only the same-origin BFF. On the server the BFF resolves the
+session and calls `NyuchiStationsClient`
+(`src/lib/stations/nyuchi-client.ts`), which talks to `api.nyuchi.com` and to
+nothing else (a guard test pins the routes in `API_ROUTES`):
+
+| Console action          | Nyuchi API                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------ |
+| Sign-in to API identity | `POST /v1/auth/token` (RFC 8693 token exchange), `POST /v1/identity/persons/ensure` (once) |
+| Register                | `POST /v1/stations` (the ingest key comes back once, with the upload target in `ingest`)   |
+| My stations             | `GET /v1/stations`                                                                         |
+| Status                  | `GET /v1/stations/{id}` (`latestMetrics`)                                                  |
+| Manual reading          | `POST /v1/stations/{id}/readings` (one reading; wind in km/h as `windSpeedKph`)            |
+| Rotate the key          | `POST /v1/stations/{id}/rotate-key` (the new key comes back once)                          |
+| Claim a legacy station  | `POST /v1/stations/{id}/claim` (with the station's key)                                    |
+
+How a person is identified to the API (docs/AUTH.md in nyuchi-api):
+
+- The console holds its own **internal key** (scopes `identity` and `stations`)
+  as two Worker secrets, `NYUCHI_CONSOLE_CLIENT_ID` and
+  `NYUCHI_CONSOLE_CLIENT_SECRET`. Both or neither; a half-set pair stops the
+  console with a configuration error that names the settings, not the values.
+- For each signed-in person the BFF trades their AuthKit access token for a
+  15 minute API token with `scope=stations`, and calls `/v1/stations*` with it.
+  That token reaches the station routes and nothing else. On
+  `404 person_not_found` the BFF provisions the person once and exchanges again.
+- The API token lives in the Worker's memory only, keyed by a SHA-256 of the
+  AuthKit token it came from, until it expires (less a margin). It is never in
+  a cookie, a response or a log. Requests for one person that arrive together
+  share one exchange; one the API stops accepting is exchanged again, once.
+- A station's own key (from this browser's store, for a legacy station) is sent
+  as the bearer for that station's status and readings only, never in a URL.
+
+What the person sees. Every failure is fixed text; the API's own words, codes
+and detail are never forwarded, and an upstream 401 or 403 is never shown as
+"signed out" (the browser signs people in again on a 401, and a console whose
+own key is wrong would send everyone round in a circle).
+
+| The API answers                        | The console says                                                  |
+| -------------------------------------- | ----------------------------------------------------------------- |
+| `503 stations_unavailable`             | Station registration is not live yet                              |
+| `409 station_limit_reached`            | You already have the most stations one person can register.       |
+| `429`                                  | Too many requests. Try again later.                               |
+| `404 station_not_found`                | Station not found (the same for a station that is someone else's) |
+| A station key that opens nothing       | That station key was not accepted.                                |
+| `403 invalid_station_key` (claim)      | That is not this station's key.                                   |
+| A reading refused (`200`, `rejected`)  | Rejected by quality checks: temperature is out of range           |
+| Anything else, or the key not accepted | The station service could not complete that request.              |
+
+Known limits, said plainly:
+
+- **Token exchange budget.** For an internal key that is not the Nyuchi
+  Console's, the exchange is limited to 30 a minute for the whole key
+  (`token_endpoint_limit` in nyuchi-api), not per person. The cache, the shared
+  exchange and a browser that asks for statuses four at a time keep a page load
+  to about one exchange; a Worker that starts cold on many isolates at once
+  could still reach it. Unmeasured. The fix is the API's: a ceiling for this key
+  like the console backend's.
+- **Legacy key-only reads share a bucket.** At the API a station-key request is
+  counted against the caller's address (the Worker's, shared by everyone) and
+  a person's own against that person, so people who read legacy stations by
+  key share 120 reads a minute. Claiming a station moves it to its owner's
+  bucket. Unmeasured.
+- **Upload target after a rotation.** The API names it at registration only
+  (`ingest`). A rotated key's setup text uses `NYUCHI_INGEST_HOST` and the path
+  hardware already uses (`/stations/ingest`).
+- **Country.** The register form asks for it and the BFF refuses a registration
+  without one: the API files an omitted country under `ZW`.
 
 ## Shape
 
@@ -34,15 +102,18 @@ A 404 from list or register is reported as "service unavailable". The mock backe
   BFF resolves the session on the server and calls a `StationsClient`
   (`src/lib/stations/`): `MockStationsClient` (development) or
   `NyuchiStationsClient` (`api.nyuchi.com`). Upstream detail and status codes
-  are mapped to fixed text, upstream 401/403 become 502, and every upstream
-  call has a timeout and never follows redirects.
+  are mapped to fixed text, upstream 401/403 become 502 (or 403 for a station
+  key that opens nothing), and every upstream call has a timeout and never
+  follows redirects.
 - Logic is plain TypeScript under `src/lib` with Vitest tests. The `.astro`
   files only compose Mzizi components.
 - Station keys stay in the owner's browser (`localStorage`, key
   `mws-console-stations`, same shape as the earlier Next.js console). Keys
   saved by that console only carry over on the **same origin**; another
   hostname starts with an empty list.
-- Hardware setup text: Wunderground (GET) and Ecowitt (POST) are pointed at
+- Hardware setup text: Wunderground (GET) and Ecowitt (POST) are pointed where
+  the API says at registration (its `ingest` field). Where it says nothing (a
+  rotated key) the console shows `NYUCHI_INGEST_HOST`, by default
   `weather-ingest.nyuchi.com`, path `/stations/ingest`. That host and path are
   confirmed against the stations Worker source and a live probe, and the owner
   should confirm them as the published ingest host.
@@ -148,7 +219,16 @@ npm run lint       # tsc over the TypeScript
 npm test           # Vitest
 npm run test:prod  # builds as deployed; WorkOS fail-closed JSON 500 + headers, mock refused, CSP
 npm run test:e2e   # Playwright smoke against the mock (Chromium required)
+npm run test:e2e:nyuchi # Playwright with the real Nyuchi client against a fake Nyuchi API
 ```
+
+The fake Nyuchi API (`e2e/support/fake-nyuchi-api.ts`) answers in the shapes of
+the API's OpenAPI examples, with no network to production, and keeps a log of
+what reached it. Vitest drives the client against it over local HTTP, and
+`test:e2e:nyuchi` starts it beside `astro dev` (the dev runtime reads settings
+from `.dev.vars` ahead of `wrangler.jsonc`, so the runner writes a throwaway one
+and puts back any you had). It is not the API: it keeps everything in memory and
+does not model every limit.
 
 `.npmrc` sets `legacy-peer-deps=true` because npm 10 crashes resolving the
 optional `react` peer of `@workos/authkit-astro` (the console has no React).
@@ -167,4 +247,9 @@ Names only; see `.env.example`. `STATIONS_BACKEND`, `NYUCHI_API_URL` and
 `NYUCHI_INGEST_HOST` are runtime values (not inlined at build). The Worker's
 non-secret values are in `wrangler.jsonc`. The WorkOS API key is the Secrets
 Store binding `CONSOLE_WORKOS_API_KEY`; the cookie password is a Worker secret
-(`wrangler secret put WORKOS_COOKIE_PASSWORD`).
+(`wrangler secret put WORKOS_COOKIE_PASSWORD`). The console's own key for the
+Nyuchi API is two Worker secrets, `NYUCHI_CONSOLE_CLIENT_ID` and
+`NYUCHI_CONSOLE_CLIENT_SECRET` (`wrangler secret put`), following owner decision
+O-S4 (plain Worker secrets for the Astro Workers, which `astro:env` reads
+directly); the owner mints the key (scopes `identity` and `stations`) and sets
+them. Nothing here holds a value.

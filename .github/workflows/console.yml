@@ -1,8 +1,10 @@
 name: Console
 
 # The StationKit console (console/): an Astro app on Cloudflare Workers.
-# Type-check, unit tests, production-bundle guards, build and the Playwright
-# smoke against the mock backend. Path-filtered so firmware/docs PRs skip it.
+# Type-check, unit tests, production-bundle guards, build, the Playwright
+# smoke against the mock backend and the Playwright run of the real Nyuchi
+# client against a fake Nyuchi API (no network to production). Path-filtered so
+# firmware/docs PRs skip it.
 on:
   pull_request:
     paths:
@@ -60,3 +62,6 @@ jobs:
 
       - name: Playwright smoke (mock backend, mock session)
         run: npm run test:e2e
+
+      - name: Playwright, real Nyuchi client against a fake Nyuchi API
+        run: npm run test:e2e:nyuchi

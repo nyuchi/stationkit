@@ -13,6 +13,7 @@ const input = {
   lat: -17.8,
   lon: 31.05,
   stationType: "manual",
+  country: "ZW",
 } as const;
 
 let client: MockStationsClient;
@@ -63,9 +64,13 @@ describe("MockStationsClient", () => {
       (await client.status(bob, stationId, { stationKey: ingestKey }))
         .stationId,
     ).toBe(stationId);
+    // A wrong key and a missing station are the same answer, as at the API.
     await expect(
       client.status(bob, stationId, { stationKey: "nope" }),
-    ).rejects.toSatisfy((e) => status(e) === 404);
+    ).rejects.toSatisfy((e) => status(e) === 403);
+    await expect(
+      client.status(bob, "mws-ffffffff", { stationKey: "nope" }),
+    ).rejects.toSatisfy((e) => status(e) === 403);
   });
 
   it("serves the seeded legacy station by key only", async () => {
@@ -85,7 +90,12 @@ describe("MockStationsClient", () => {
       temperatureC: 21.5,
       rainfallMm: 2,
     });
-    expect(res).toEqual({ accepted: 2, qcStatus: "validated" });
+    expect(res).toEqual({
+      accepted: 1,
+      rejected: 0,
+      qcStatus: "validated",
+      problems: [],
+    });
     const st = await client.status(alice, stationId);
     expect(st.lastObservationAt).toBe("2026-10-11T08:00:00.000Z");
     expect(st.latestMetrics).toEqual({
@@ -100,11 +110,29 @@ describe("MockStationsClient", () => {
       await client.submitReading(alice, stationId, { temperatureC: 99 }),
     ).toEqual({
       accepted: 0,
+      rejected: 1,
       qcStatus: "rejected",
+      problems: [{ field: "temperatureC", code: "out_of_range" }],
     });
     expect(
       (await client.status(alice, stationId)).lastObservationAt,
     ).toBeNull();
+  });
+
+  it("refuses a whole reading when one value is out of range, as the API does for a typed reading", async () => {
+    const { stationId } = await client.register(alice, input);
+    const res = await client.submitReading(alice, stationId, {
+      temperatureC: 21,
+      humidityPercent: 150,
+    });
+    expect(res.qcStatus).toBe("rejected");
+    expect(res.problems).toEqual([
+      { field: "humidityPercent", code: "out_of_range" },
+    ]);
+    expect((await client.status(alice, stationId)).latestMetrics).toBeNull();
+    expect((await client.submitReading(alice, stationId, {})).problems).toEqual(
+      [{ field: null, code: "no_measurement" }],
+    );
   });
 
   it("rotates the key: new key works, old key stops, a key cannot rotate itself", async () => {
@@ -116,7 +144,7 @@ describe("MockStationsClient", () => {
     expect(rotated.ingestKey).not.toBe(ingestKey);
     await expect(
       client.status(bob, stationId, { stationKey: ingestKey }),
-    ).rejects.toSatisfy((e) => status(e) === 404);
+    ).rejects.toSatisfy((e) => status(e) === 403);
     expect(
       (await client.status(bob, stationId, { stationKey: rotated.ingestKey }))
         .stationId,
@@ -132,11 +160,41 @@ describe("MockStationsClient", () => {
       bare.status(alice, MOCK_LEGACY_STATION.stationId, {
         stationKey: MOCK_LEGACY_STATION.key,
       }),
-    ).rejects.toSatisfy((e) => status(e) === 404);
+    ).rejects.toSatisfy((e) => status(e) === 403);
     for (let i = 0; i < MOCK_STATION_CAP; i++)
       await bare.register(alice, input);
     await expect(bare.register(alice, input)).rejects.toSatisfy(
       (e) => status(e) === 429,
     );
+  });
+
+  it("lets a person claim a legacy station with its key, and then it is theirs", async () => {
+    const s = MOCK_LEGACY_STATION;
+    await expect(
+      client.claim(alice, s.stationId, { stationKey: "wrong" }),
+    ).rejects.toSatisfy((e) => status(e) === 403);
+    await expect(client.claim(alice, s.stationId, {})).rejects.toSatisfy(
+      (e) => status(e) === 403,
+    );
+    const claimed = await client.claim(alice, s.stationId, {
+      stationKey: s.key,
+    });
+    expect(claimed.stationId).toBe(s.stationId);
+    expect((await client.list(alice)).map((x) => x.stationId)).toEqual([
+      s.stationId,
+    ]);
+    expect((await client.status(alice, s.stationId)).name).toBe(s.name);
+    // Claiming your own again changes nothing; anyone else's is a 404.
+    expect(
+      (await client.claim(alice, s.stationId, { stationKey: s.key })).stationId,
+    ).toBe(s.stationId);
+    await expect(
+      client.claim(bob, s.stationId, { stationKey: s.key }),
+    ).rejects.toSatisfy((e) => status(e) === 404);
+    await expect(
+      client.claim(bob, "mws-ffffffff", { stationKey: s.key }),
+    ).rejects.toSatisfy((e) => status(e) === 404);
+    // A claimed station can be rotated by its owner, which a key alone cannot.
+    expect((await client.rotateKey(alice, s.stationId)).ingestKey).toBeTruthy();
   });
 });

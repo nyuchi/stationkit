@@ -73,6 +73,21 @@ describe("setupInstructions", () => {
     expect(i.wunderground).toContain("ID = mws-0a0a0a0a");
     expect(i.ecowitt).toContain("PASSKEY = mws-0a0a0a0a:<your ingest key>");
   });
+  it("shows what the API said, per protocol, instead of the configured host", () => {
+    const i = setupInstructions("weather-ingest.nyuchi.com", "mws-0a0a0a0a", {
+      wunderground: { server: "wu.example.test", path: "/in/wu" },
+      ecowitt: { server: "ec.example.test", path: "/in/ec" },
+    });
+    expect(i.wunderground).toContain("server wu.example.test, path /in/wu");
+    expect(i.ecowitt).toContain("server ec.example.test, path /in/ec");
+    expect(JSON.stringify(i)).not.toContain("weather-ingest.nyuchi.com");
+  });
+  it("falls back to the configured host when the API said nothing, as for a rotated key", () => {
+    const i = setupInstructions("h.example.test", "mws-0a0a0a0a", null);
+    expect(i.wunderground).toContain(
+      "server h.example.test, path /stations/ingest",
+    );
+  });
   it("never embeds the key", () => {
     expect(
       JSON.stringify(setupInstructions("h.test", "mws-0a0a0a0a")),
@@ -98,11 +113,27 @@ describe("formatting", () => {
     );
   });
   it("describes QC outcomes", () => {
-    expect(describeReadingResult({ accepted: 3, qcStatus: "validated" })).toBe(
+    expect(describeReadingResult({ qcStatus: "validated" }, 3)).toBe(
       "Saved. 3 measurement(s) accepted",
     );
-    expect(describeReadingResult({ accepted: 0, qcStatus: "rejected" })).toBe(
+    expect(describeReadingResult({ qcStatus: "rejected" }, 3)).toBe(
       "Rejected by quality checks",
+    );
+    expect(
+      describeReadingResult(
+        {
+          qcStatus: "rejected",
+          problems: [
+            { field: "temperatureC", code: "out_of_range" },
+            { field: "windKph", code: "conflicting_fields" },
+            { field: "temperatureC", code: "out_of_range" },
+            { field: null, code: "no_measurement" },
+          ],
+        },
+        3,
+      ),
+    ).toBe(
+      "Rejected by quality checks: temperature is out of range; wind was not accepted",
     );
   });
 });

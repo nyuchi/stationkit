@@ -39,6 +39,7 @@ describe("ConsoleApi", () => {
       lat: 1,
       lon: 2,
       stationType: "digital",
+      country: "ZW",
     });
     expect(call(f)[1].headers["Content-Type"]).toBe("application/json");
     await client.submitReading("mws-0a0a0a0a", { windKph: 1 });
@@ -47,13 +48,29 @@ describe("ConsoleApi", () => {
     expect(call(f)[0]).toBe("/api/stations/mws-0a0a0a0a/rotate-key");
     expect(call(f)[1].method).toBe("POST");
   });
+  it("claims with the station key as a header and no body", async () => {
+    const { f, client } = api({ body: { stationId: "mws-0a0a0a0a" } });
+    await client.claim("mws-0a0a0a0a", "legacy-key");
+    const [url, init] = call(f);
+    expect(url).toBe("/api/stations/mws-0a0a0a0a/claim");
+    expect(url).not.toContain("legacy-key");
+    expect(init.method).toBe("POST");
+    expect(init.headers["X-Station-Key"]).toBe("legacy-key");
+    expect(init.body).toBeUndefined();
+  });
   it("turns server errors into ConsoleApiError with the server message", async () => {
     const { client } = api({
       status: 400,
       body: { error: "Latitude must be a number" },
     });
     await expect(
-      client.register({ name: "F", lat: 1, lon: 2, stationType: "digital" }),
+      client.register({
+        name: "F",
+        lat: 1,
+        lon: 2,
+        stationType: "digital",
+        country: "ZW",
+      }),
     ).rejects.toMatchObject({
       status: 400,
       message: "Latitude must be a number",

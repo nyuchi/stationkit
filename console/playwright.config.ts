@@ -5,6 +5,7 @@ import { defineConfig, devices } from "@playwright/test";
 // mock cookie session.
 export default defineConfig({
   testDir: "e2e",
+  testIgnore: "nyuchi.spec.ts",
   fullyParallel: false,
   workers: 1,
   reporter: [["list"]],

@@ -88,4 +88,12 @@ export class ConsoleApi {
       },
     );
   }
+
+  /** Take over a legacy station by proving its key (sent as a header, never in the URL). */
+  claim(stationId: string, key: string) {
+    return this.request<StationSummary>(
+      `/api/stations/${encodeURIComponent(stationId)}/claim`,
+      { method: "POST", key },
+    );
+  }
 }

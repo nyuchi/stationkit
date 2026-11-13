@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isStationId,
+  isStationKey,
   parseReadingInput,
   parseRegisterInput,
 } from "./validators";
@@ -11,6 +12,7 @@ describe("parseRegisterInput", () => {
     lat: "-18.18",
     lon: 31.55,
     stationType: "digital",
+    country: "zw",
   };
 
   it("trims, coerces numeric strings and accepts a valid body", () => {
@@ -22,8 +24,29 @@ describe("parseRegisterInput", () => {
         lat: -18.18,
         lon: 31.55,
         stationType: "digital",
+        country: "ZW",
       },
     });
+  });
+
+  it("requires a real country and upper-cases it: the API files an omitted one under ZW", () => {
+    expect(parseRegisterInput({ ...ok, country: " ke " })).toMatchObject({
+      ok: true,
+      value: { country: "KE" },
+    });
+    const { country: _omitted, ...without } = ok;
+    for (const bad of [
+      without,
+      { ...ok, country: "" },
+      { ...ok, country: "ZZ" },
+      { ...ok, country: "ZWE" },
+      { ...ok, country: 7 },
+      { ...ok, country: null },
+    ]) {
+      const r = parseRegisterInput(bad);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toMatch(/country/i);
+    }
   });
 
   it("keeps trimmed hardware and drops blank hardware", () => {
@@ -134,5 +157,27 @@ describe("isStationId", () => {
     ]) {
       expect(isStationId(bad)).toBe(false);
     }
+  });
+});
+
+describe("isStationKey", () => {
+  it("accepts one token of visible ASCII, up to 256 characters", () => {
+    expect(isStationKey("legacy-demo-key")).toBe(true);
+    expect(isStationKey("Zk3_-9aB~.=")).toBe(true);
+    expect(isStationKey("x".repeat(256))).toBe(true);
+  });
+  it.each([
+    "",
+    " ",
+    "a b",
+    "a\nb",
+    "a\u0000b",
+    "caf\u00e9",
+    "x".repeat(257),
+    5,
+    null,
+    undefined,
+  ])("rejects %j", (v) => {
+    expect(isStationKey(v)).toBe(false);
   });
 });

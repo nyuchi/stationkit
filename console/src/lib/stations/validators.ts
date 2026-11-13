@@ -1,3 +1,4 @@
+import { parseCountry } from "../countries";
 import {
   READING_FIELDS,
   type ReadingInput,
@@ -27,6 +28,16 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 export function isStationId(value: unknown): value is string {
   return typeof value === "string" && STATION_ID_RE.test(value);
+}
+
+/**
+ * A station key as keys are issued: one token of visible ASCII. It is checked
+ * before it is put in a header to the API, so a malformed one never leaves the BFF.
+ */
+const STATION_KEY_RE = /^[\x21-\x7e]{1,256}$/;
+
+export function isStationKey(value: unknown): value is string {
+  return typeof value === "string" && STATION_KEY_RE.test(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -75,7 +86,11 @@ export function parseRegisterInput(raw: unknown): Parsed<RegisterInput> {
   if (!stationType)
     return { ok: false, error: "Station type must be digital or manual." };
 
-  const value: RegisterInput = { name, lat, lon, stationType };
+  const country = parseCountry(raw.country);
+  if (!country)
+    return { ok: false, error: "Choose the country the station is in." };
+
+  const value: RegisterInput = { name, lat, lon, stationType, country };
   if (
     raw.hardware !== undefined &&
     raw.hardware !== null &&

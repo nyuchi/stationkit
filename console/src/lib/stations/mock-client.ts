@@ -2,7 +2,9 @@ import {
   type Caller,
   type IssuedCredentials,
   type KeyAuth,
+  type ReadingField,
   type ReadingInput,
+  type ReadingProblem,
   type ReadingResult,
   type RegisterInput,
   type StationStatus,
@@ -115,10 +117,18 @@ export class MockStationsClient implements StationsClient {
   ): Promise<MockStation> {
     await this.seeded;
     const station = this.stations.get(stationId);
-    if (!station) throw new StationsApiError(404, "Station not found");
-    if (station.ownerId !== null && station.ownerId === caller.personId)
-      return station;
-    if (auth?.stationKey && (await sha256(auth.stationKey)) === station.keyHash)
+    // A key was sent: it opens this station or it does not. The API answers a
+    // wrong key and a missing station alike, so the mock does too.
+    if (auth?.stationKey) {
+      if (station && (await sha256(auth.stationKey)) === station.keyHash)
+        return station;
+      throw new StationsApiError(403, "That station key was not accepted.");
+    }
+    if (
+      station &&
+      station.ownerId !== null &&
+      station.ownerId === caller.personId
+    )
       return station;
     // Never reveal whether the id exists to someone who cannot use it.
     throw new StationsApiError(404, "Station not found");
@@ -186,24 +196,26 @@ export class MockStationsClient implements StationsClient {
   ): Promise<ReadingResult> {
     const s = await this.authorise(caller, stationId, auth);
     const metrics: Record<string, number> = {};
-    for (const [field, value] of Object.entries(reading)) {
-      const name = METRIC_NAMES[field as keyof typeof METRIC_NAMES];
+    const problems: ReadingProblem[] = [];
+    for (const [field, value] of Object.entries(reading) as [
+      ReadingField,
+      unknown,
+    ][]) {
+      const name = METRIC_NAMES[field];
       const range = name ? QC_RANGES[name] : undefined;
-      if (
-        name &&
-        range &&
-        typeof value === "number" &&
-        value >= range[0] &&
-        value <= range[1]
-      ) {
-        metrics[name] = value;
-      }
+      if (!name || !range || typeof value !== "number") continue;
+      if (value >= range[0] && value <= range[1]) metrics[name] = value;
+      else problems.push({ field, code: "out_of_range" });
     }
-    if (Object.keys(metrics).length === 0)
-      return { accepted: 0, qcStatus: "rejected" };
+    // As the API does for a reading a person typed: one value out of range
+    // refuses the whole reading, and so does a reading with nothing in it.
+    if (problems.length === 0 && Object.keys(metrics).length === 0)
+      problems.push({ field: null, code: "no_measurement" });
+    if (problems.length > 0)
+      return { accepted: 0, rejected: 1, qcStatus: "rejected", problems };
     s.lastObservationAt = this.now().toISOString();
     s.latestMetrics = metrics;
-    return { accepted: Object.keys(metrics).length, qcStatus: "validated" };
+    return { accepted: 1, rejected: 0, qcStatus: "validated", problems: [] };
   }
 
   async rotateKey(
@@ -216,4 +228,32 @@ export class MockStationsClient implements StationsClient {
     s.keyHash = await sha256(ingestKey);
     return { stationId, ingestKey };
   }
+
+  async claim(
+    caller: Caller,
+    stationId: string,
+    auth: KeyAuth,
+  ): Promise<StationSummary> {
+    await this.seeded;
+    const s = this.stations.get(stationId);
+    if (!s) throw new StationsApiError(404, "This station cannot be claimed");
+    if (s.ownerId === caller.personId) return summaryOf(s);
+    // A station somebody owns is a 404, as it is at the API.
+    if (s.ownerId !== null)
+      throw new StationsApiError(404, "This station cannot be claimed");
+    if (!auth.stationKey || (await sha256(auth.stationKey)) !== s.keyHash)
+      throw new StationsApiError(403, "That is not this station's key.");
+    s.ownerId = caller.personId;
+    return summaryOf(s);
+  }
+}
+
+function summaryOf(s: MockStation): StationSummary {
+  return {
+    stationId: s.stationId,
+    name: s.name,
+    stationType: s.stationType,
+    status: s.status,
+    lastObservationAt: s.lastObservationAt,
+  };
 }
