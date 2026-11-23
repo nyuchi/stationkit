@@ -11,7 +11,7 @@ on:
       - "console/**"
       - ".github/workflows/console.yml"
   push:
-    branches: [main, staging]
+    branches: [main]
     paths:
       - "console/**"
       - ".github/workflows/console.yml"
